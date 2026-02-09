@@ -21,7 +21,7 @@ function archiveTerminated() {
     // Check monthly status columns for "terminate"
     let hasTerminate = false;
     
-    for (let col = CONFIG.COLS.FIRST_MONTH - 1; col < data[i].length; col++) {
+    for (let col = CONFIG.TRACKER_COLS.FIRST_MONTH - 1; col < data[i].length; col++) {
       if (data[i][col] === 'terminate') {
         hasTerminate = true;
         break;
@@ -35,7 +35,7 @@ function archiveTerminated() {
       // Delete from TRACKER
       trackerSheet.deleteRow(i + 1);
       
-      const companyName = data[i][CONFIG.COLS.COMPANY_NAME - 1];
+      const companyName = data[i][CONFIG.TRACKER_COLS.COMPANY_NAME - 1];
       Logger.log(`Archived: ${companyName}`);
       archivedCount++;
     }

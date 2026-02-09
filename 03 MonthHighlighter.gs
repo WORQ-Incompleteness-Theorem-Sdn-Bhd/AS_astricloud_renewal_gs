@@ -18,7 +18,7 @@ function highlightCurrentMonth() {
   const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   
   // Clear previous highlighting (from column K onwards)
-  const monthRange = sheet.getRange(1, CONFIG.COLS.FIRST_MONTH, sheet.getLastRow(), lastCol - CONFIG.COLS.FIRST_MONTH + 1);
+  const monthRange = sheet.getRange(1, CONFIG.TRACKER_COLS.FIRST_MONTH, sheet.getLastRow(), lastCol - CONFIG.TRACKER_COLS.FIRST_MONTH + 1);
   monthRange.setBackground(null);
   
   // Find and highlight current month

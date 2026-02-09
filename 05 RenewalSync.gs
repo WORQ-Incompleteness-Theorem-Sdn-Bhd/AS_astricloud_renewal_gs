@@ -28,12 +28,12 @@ function syncRenewals() {
       const trackerData = trackerSheet.getDataRange().getValues();
       
       for (let j = 1; j < trackerData.length; j++) {
-        const trackerCompanyName = trackerData[j][CONFIG.COLS.COMPANY_NAME - 1];
+        const trackerCompanyName = trackerData[j][CONFIG.TRACKER_COLS.COMPANY_NAME - 1];
         
         if (trackerCompanyName === companyName) {
           
           // Get current contract end
-          const currentEnd = trackerData[j][CONFIG.COLS.CONTRACT_END - 1];
+          const currentEnd = trackerData[j][CONFIG.TRACKER_COLS.CONTRACT_END - 1];
           const currentEndDate = new Date(currentEnd);
           
           // Calculate new contract end (+12 months from current end)
@@ -41,7 +41,7 @@ function syncRenewals() {
           newEndDate.setFullYear(newEndDate.getFullYear() + 1);
           
           // Update contract end date
-          trackerSheet.getRange(j + 1, CONFIG.COLS.CONTRACT_END).setValue(newEndDate);
+          trackerSheet.getRange(j + 1, CONFIG.TRACKER_COLS.CONTRACT_END).setValue(newEndDate);
           
           // Populate another 12 months of "paid" status
           const newStartMonth = new Date(currentEndDate);
