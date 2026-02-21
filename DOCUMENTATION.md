@@ -75,14 +75,21 @@ The main entry point. Contains the global `CONFIG` object (declared with `var` f
 | Function | Type | Description |
 |----------|------|-------------|
 | `onOpen()` | Auto-trigger | Creates the custom menu when the spreadsheet is opened |
-| `setupTriggers()` | Manual | Installs 4 daily time-based triggers (7 AM, 8 AM, 9 AM, 10 AM) |
-| `removeAllTriggers()` | Manual | Deletes all project triggers |
 
-**Trigger Schedule:**
-- 7:00 AM — `highlightCurrentMonth()`
-- 8:00 AM — `copyNewEntriesToTracker()`
-- 9:00 AM — `checkAndSendReminders()`
-- 10:00 AM — `syncRenewals()`
+**Menu items (in order):**
+| # | Label | Function |
+|---|-------|----------|
+| [01] | Highlight Current Month | `highlightCurrentMonth()` |
+| [02] | Copy New Entries from Form | `copyNewEntriesToTracker()` |
+| [03] | Check & Send Renewal Reminders | `checkAndSendReminders()` |
+| [04] | Backfill Missing Paid Status | `backfillMissingPaidStatus()` |
+| [05] | Sync Renewals from Renewal Status | `syncRenewals()` |
+| [06] | Archive Terminated Customers | `archiveTerminated()` |
+| — | *(separator)* | — |
+| | Setup Renewal Status Dropdown | `setupRenewalStatusDropdown()` |
+| | Remove Archived Duplicates from Tracker | `removeArchivedDuplicatesFromTracker()` |
+
+> `setupTriggers()` and `removeAllTriggers()` are currently commented out. Triggers are managed manually via the Apps Script Triggers UI.
 
 ---
 
@@ -158,6 +165,7 @@ Processes renewal decisions from TRACKER col F and updates contract dates and mo
 |----------|------|-------------|
 | `syncRenewals()` | Scheduled / Manual | Reads TRACKER col F — processes `Renew` and `Not Renewing` rows |
 | `populate12MonthsFromDate(sheet, rowNumber, startDate)` | Internal | Populates 12 monthly columns from a given start date: first month = `renew`, subsequent months = `paid` |
+| `extendMonthHeaders(sheet, upToDate)` | Internal | Auto-extends TRACKER month header columns (rows 1 & 2) up to the required date. Called automatically before populating months. No-ops if headers already cover the range. |
 | `markMonthCell(sheet, rowNumber, targetDate, value)` | Internal | Sets a single month column cell to a given value by matching the month header |
 
 **Renew workflow (col F = "Renew"):**
@@ -165,9 +173,10 @@ Processes renewal decisions from TRACKER col F and updates contract dates and mo
 2. New Contract Start = **1st of the month after current end** (avoids day-overflow issues, e.g. Jan 31 + 1 month ≠ Feb 28)
 3. New Contract End = current end date + 1 year
 4. Updates col G and col H with new dates
-5. Populates 12 months from new start: first month = `renew`, rest = `paid`
-6. Sets col F to `Renewed`
-7. Sends renewal confirmation email (if email is present)
+5. **`extendMonthHeaders()`** — automatically adds new month columns if the new end date goes beyond the last existing header (e.g. renewing into 2028 adds Jan-2028 through the required month; year label added in row 1 at each new January)
+6. Populates 12 months from new start: first month = `renew`, rest = `paid`
+7. Sets col F to `Renewed`
+8. Sends renewal confirmation email (if email is present)
 
 **Not Renewing workflow (col F = "Not Renewing"):**
 1. Marks the contract end month cell as `terminate`
@@ -183,6 +192,7 @@ Moves terminated customers from TRACKER to ARCHIVED.
 | Function | Type | Description |
 |----------|------|-------------|
 | `archiveTerminated()` | Manual | Scans monthly status columns (col I onwards) for `terminate`, copies the full row to ARCHIVED, deletes from TRACKER. Processes bottom-to-top to avoid index shifting. |
+| `removeArchivedDuplicatesFromTracker()` | Manual | Scans TRACKER for any company that already exists in ARCHIVED (case-insensitive) and removes it. Use as a one-time cleanup if companies were re-added before the duplicate-check fix. |
 
 - Preserves all data (entire row is copied as-is to ARCHIVED)
 - Once archived, `copyNewEntriesToTracker()` will never re-add the company
@@ -259,4 +269,6 @@ clasp pull
 1. Apps Script API must be enabled at [script.google.com/home/usersettings](https://script.google.com/home/usersettings)
 2. Run `clasp login` once to authenticate
 
-`.claspignore` excludes: `.clasp.json`, `.claspignore`, `*.md`, `*.claude`
+`.claspignore` excludes: `.clasp.json`, `.claspignore`, `*.md`, `*.claude`, `*.js`
+
+> **Note:** `clasp pull` downloads files with a `.js` extension, creating duplicates alongside the `.gs` files. To avoid this, always make changes locally in `.gs` files and use `clasp push --force` to sync up. If you do run `clasp pull`, manually copy the content from the `.js` files into the corresponding `.gs` files and delete the `.js` files. The `*.js` entry in `.claspignore` prevents any `.js` files from being accidentally pushed back.
