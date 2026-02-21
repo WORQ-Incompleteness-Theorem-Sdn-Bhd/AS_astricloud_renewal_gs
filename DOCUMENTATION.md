@@ -18,7 +18,10 @@ A Google Apps Script automation system that manages customer contract tracking f
 The spreadsheet contains 4 sheets:
 
 ### 1. TRACKER (Main sheet)
-The central tracking sheet with a monthly payment grid.
+The central tracking sheet with a monthly payment grid. It has **two header rows**:
+- **Row 1**: Year group labels (2024, 2025, 2026, ...) spanning the month columns
+- **Row 2**: Month column names (Feb-2024, Mar-2024, ...)
+- **Row 3+**: Customer data
 
 | Column | Field | Description |
 |--------|-------|-------------|
@@ -27,12 +30,9 @@ The central tracking sheet with a monthly payment grid.
 | C | WORQ Location | Which WORQ outlet the customer belongs to |
 | D | Company Email | Contact email for the customer |
 | E | Pilot Number | Virtual landline number (triggers auto-population when entered) |
-| F | Quotation # | Quotation reference (manually filled) |
-| G | PO # | Purchase order reference (manually filled) |
-| H | Deposit | Deposit information (manually filled) |
-| I | Contract Start | Auto-set to today when pilot number is entered |
-| J | Contract End | Auto-set to Contract Start + 12 months |
-| K+ | Monthly columns (Feb-2024, Mar-2024, ...) | Payment status: `paid`, `renew`, `terminate`, `not proceed` |
+| F | Contract Start | Auto-set to 1st of the current month when pilot number is entered |
+| G | Contract End | Auto-set to last day of the 12th month from contract start |
+| H+ | Monthly columns (Feb-2024, Mar-2024, ...) | Payment status: `paid`, `renew`, `terminate`, `not proceed` |
 
 ### 2. Form Responses 1
 Auto-populated by the linked Google Form.
@@ -67,7 +67,19 @@ Storage for terminated customer records. Same column structure as TRACKER.
 ## File Structure & Functions
 
 ### 01 code.gs - Configuration & Triggers
-The main entry point. Contains the global `CONFIG` object and menu/trigger management.
+The main entry point. Contains the global `CONFIG` object (declared with `var` for cross-file accessibility in Apps Script V8) and menu/trigger management.
+
+**CONFIG.TRACKER_COLS:**
+| Key | Column | Description |
+|-----|--------|-------------|
+| NO | A (1) | Row number |
+| COMPANY_NAME | B (2) | Company name |
+| WORQ_LOCATION | C (3) | WORQ outlet |
+| COMPANY_EMAIL | D (4) | Contact email |
+| PILOT_NUMBER | E (5) | Virtual landline number |
+| CONTRACT_START | F (6) | Contract start date |
+| CONTRACT_END | G (7) | Contract end date |
+| FIRST_MONTH | H (8) | First month column (Feb-2024) |
 
 | Function | Type | Description |
 |----------|------|-------------|
@@ -87,15 +99,22 @@ Handles new customer intake and pilot number activation.
 | Function | Type | Description |
 |----------|------|-------------|
 | `copyNewEntriesToTracker()` | Scheduled / Manual | Copies new form responses to TRACKER (deduplicates by company name) |
-| `onEdit(e)` | Auto-trigger | When a pilot number is entered in column E, auto-sets contract dates and 12 months of "paid" |
+| `onPilotNumberEdit(e)` | Installable trigger | When a pilot number is entered in column E, validates for duplicates, then auto-sets contract dates and 12 months of "paid" |
 | `populate12MonthsPaid(sheet, rowNumber)` | Internal | Populates 12 monthly columns with "paid" + dropdown validation from the contract start date |
+| `debugHeaders()` | Debug helper | Logs the type and value of month column headers from row 2 to the execution log |
+
+> **Trigger setup**: In the Apps Script Triggers UI, create an installable **On edit** trigger pointing to `onPilotNumberEdit` (not the built-in `onEdit`). Using a non-reserved function name prevents double-firing.
 
 **Workflow:**
 1. Customer fills out Google Form
 2. `copyNewEntriesToTracker()` copies Company Name, Email, Location to TRACKER with empty pilot/contract fields
 3. Admin manually enters a Pilot Number in column E
-4. `onEdit()` fires: sets Contract Start = today, Contract End = today + 12 months
+4. `onPilotNumberEdit()` fires:
+   - Checks for duplicate pilot numbers across all TRACKER rows — shows error modal and clears the cell if duplicate found
+   - Sets Contract Start = **1st of the current month**
+   - Sets Contract End = **last day of the 12th month** (e.g. 1 Feb 2026 → 31 Jan 2027)
 5. `populate12MonthsPaid()` fills the next 12 month columns with "paid" and adds dropdown validation
+   - Reads month headers from **row 2** (handles both string and Date-formatted header cells)
 
 ### 03 MonthHighlighter.gs - Visual Highlighting
 Highlights the current month column for easy visual reference.
@@ -103,6 +122,9 @@ Highlights the current month column for easy visual reference.
 | Function | Type | Description |
 |----------|------|-------------|
 | `highlightCurrentMonth()` | Scheduled / Manual | Clears all month column backgrounds, then highlights the current month column in cyan (#00FFFF) |
+
+- Reads month headers from **row 2** (handles both string and Date-formatted header cells)
+- Clears backgrounds starting from column H (FIRST_MONTH = 8) across all rows
 
 ### 04 RenewalReminders.gs - Email Reminder System
 Sends automated renewal reminder emails at 3, 2, and 1 months before contract expiry.
@@ -154,7 +176,7 @@ Google Form
     |
     | copyNewEntriesToTracker()
     v
-[TRACKER] <--- onEdit() (pilot number triggers auto-population)
+[TRACKER] <--- onPilotNumberEdit() (pilot number triggers auto-population)
     |
     |--- checkAndSendReminders() ---> Email to customer
     |                              |
@@ -170,17 +192,11 @@ Google Form
 
 ## Known Issues / Potential Bugs
 
-1. **Inconsistent CONFIG references**: Files `03`, `05`, and `06` reference `CONFIG.COLS.*` (e.g., `CONFIG.COLS.FIRST_MONTH`, `CONFIG.COLS.COMPANY_NAME`, `CONFIG.COLS.CONTRACT_END`) but the CONFIG object defines these under `CONFIG.TRACKER_COLS.*`. This will cause `undefined` errors at runtime.
-
-   - `03 MonthHighlighter.gs:21` - `CONFIG.COLS.FIRST_MONTH` should be `CONFIG.TRACKER_COLS.FIRST_MONTH`
+1. **`CONFIG.COLS.*` references in files 05 and 06**: `05 RenewalSync.gs` and `06 ArchiveTerminated.gs` may reference `CONFIG.COLS.*` instead of `CONFIG.TRACKER_COLS.*`, which will cause `undefined` errors at runtime.
    - `05 RenewalSync.gs:31,36,44` - `CONFIG.COLS.COMPANY_NAME`, `CONFIG.COLS.CONTRACT_END` should be `CONFIG.TRACKER_COLS.*`
    - `06 ArchiveTerminated.gs:24,38` - `CONFIG.COLS.FIRST_MONTH`, `CONFIG.COLS.COMPANY_NAME` should be `CONFIG.TRACKER_COLS.*`
 
-2. **`copyNewEntriesToTracker()` row numbering**: The `lastNo` calculation uses the last row of `trackerData` (which was fetched once), but `appendRow()` adds new rows. If multiple new entries are copied in one run, all will get the same `newNo` value because `trackerData` is not refreshed after each append.
-
-3. **`onEdit()` is a simple trigger**: Simple triggers have limited permissions (cannot send emails, access certain services). If this needs more permissions, it should be an installable trigger instead.
-
-4. **Month column matching**: The `populate12MonthsPaid()` function matches month columns by the format `MMM-yyyy` (e.g., "Feb-2024"). If the spreadsheet header uses a different format or the column doesn't exist yet, those months will be silently skipped.
+2. **`copyNewEntriesToTracker()` row numbering**: The `lastNo` calculation uses the last row of `trackerData` (fetched once before the loop). If multiple new entries are copied in one run, all will get the same `newNo` because `trackerData` is not refreshed after each `appendRow()`.
 
 ---
 

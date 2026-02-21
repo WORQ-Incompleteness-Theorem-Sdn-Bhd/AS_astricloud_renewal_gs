@@ -33,19 +33,15 @@ function copyNewEntriesToTracker() {
       const lastNo = trackerData.length > 1 ? trackerData[trackerData.length - 1][CONFIG.TRACKER_COLS.NO - 1] : 0;
       const newNo = parseInt(lastNo) + 1;
       
-      // Prepare row data (columns A through J)
-      // Note: Pilot number, quotation, PO, deposit are empty initially
+      // Prepare row data (columns A through G)
       const newRow = [
-        newNo,                  // NO
-        companyName,            // Company Name
-        location,               // WORQ Location
-        email,                  // Company Email
-        '',                     // Pilot Number (empty - to be filled manually)
-        '',                     // Quotation #
-        '',                     // PO #
-        '',                     // Deposit
-        '',                     // Contract Start (empty until pilot number added)
-        ''                      // Contract End (empty until pilot number added)
+        newNo,                  // A - NO
+        companyName,            // B - Company Name
+        location,               // C - WORQ Location
+        email,                  // D - Company Email
+        '',                     // E - Pilot Number (empty - to be filled manually)
+        '',                     // F - Contract Start (auto-filled on pilot number entry)
+        ''                      // G - Contract End (auto-filled on pilot number entry)
       ];
       
       // Append to tracker
@@ -64,12 +60,18 @@ function copyNewEntriesToTracker() {
 }
 
 /**
- * Trigger to run when pilot number is added
- * This function monitors changes and auto-populates dates and payment status
+ * Installable trigger: runs when a cell is edited.
+ * In Apps Script Triggers UI, point the "On edit" trigger to this function.
  */
-function onEdit(e) {
-  const sheet = e.source.getActiveSheet();
+function onPilotNumberEdit(e) {
+  // Guard against manual execution (no event object)
+  if (!e || !e.source) {
+    Logger.log('onEdit must be triggered by an edit event, not run manually.');
+    return;
+  }
+
   const range = e.range;
+  const sheet = range.getSheet(); // Use range.getSheet() — reliable for installable triggers
   
   // Only process edits in TRACKER sheet, column E (Pilot Number)
   if (sheet.getName() !== CONFIG.TRACKER_SHEET || range.getColumn() !== CONFIG.TRACKER_COLS.PILOT_NUMBER) {
@@ -77,25 +79,40 @@ function onEdit(e) {
   }
   
   const row = range.getRow();
-  if (row === 1) return; // Skip header
+  if (row <= 2) return; // Skip both header rows (row 1 = year labels, row 2 = month labels)
   
   const pilotNumber = range.getValue();
   
   // Check if pilot number was just added (not empty)
   if (pilotNumber && pilotNumber.toString().trim() !== '') {
-    
+
+    // Check for duplicate pilot number in the entire TRACKER sheet (skip header rows and current row)
+    const allData = sheet.getDataRange().getValues();
+    const pilotStr = pilotNumber.toString().trim();
+    const duplicate = allData.some((r, i) => {
+      if (i < 2) return false; // skip both header rows
+      if (i === row - 1) return false; // skip current row (0-indexed)
+      return r[CONFIG.TRACKER_COLS.PILOT_NUMBER - 1].toString().trim() === pilotStr;
+    });
+
+    if (duplicate) {
+      SpreadsheetApp.getUi().alert(`❌ Duplicate Pilot Number\n\n"${pilotStr}" already exists in the tracker.\n\nPlease enter a unique pilot number.`);
+      range.clearContent();
+      return;
+    }
+
     // Check if contract start is empty
     const contractStartCell = sheet.getRange(row, CONFIG.TRACKER_COLS.CONTRACT_START);
     
     if (!contractStartCell.getValue() || contractStartCell.getValue() === '') {
       
-      // Set contract start to today
-      const startDate = new Date();
+      // Set contract start to 1st of the current month
+      const now = new Date();
+      const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       contractStartCell.setValue(startDate);
-      
-      // Set contract end to +12 months
-      const endDate = new Date(startDate);
-      endDate.setFullYear(endDate.getFullYear() + 1);
+
+      // Set contract end to last day of the 12th month (e.g. 1 Feb 2026 → 31 Jan 2027)
+      const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 12, 0);
       sheet.getRange(row, CONFIG.TRACKER_COLS.CONTRACT_END).setValue(endDate);
       
       // Populate 12 months of "paid" status
@@ -119,8 +136,8 @@ function populate12MonthsPaid(sheet, rowNumber) {
   
   const startDate = new Date(contractStart);
   
-  // Get header row to find month columns
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  // Get month headers from row 2 (row 1 = year labels, row 2 = month names like Feb-2024)
+  const headers = sheet.getRange(2, 1, 1, sheet.getLastColumn()).getValues()[0];
   
   // Populate 12 months from contract start
   for (let monthOffset = 0; monthOffset < 12; monthOffset++) {
@@ -129,10 +146,13 @@ function populate12MonthsPaid(sheet, rowNumber) {
     
     const targetMonthYear = Utilities.formatDate(targetDate, Session.getScriptTimeZone(), 'MMM-yyyy');
     
-    // Find matching column header
+    // Find matching column header (handles both string and Date-formatted cells)
     const colIndex = headers.findIndex(header => {
       if (typeof header === 'string') {
         return header.trim() === targetMonthYear;
+      }
+      if (header instanceof Date) {
+        return Utilities.formatDate(header, Session.getScriptTimeZone(), 'MMM-yyyy') === targetMonthYear;
       }
       return false;
     });
@@ -151,4 +171,18 @@ function populate12MonthsPaid(sheet, rowNumber) {
   }
   
   Logger.log(`Populated 12 months for row ${rowNumber}`);
+}
+
+/**
+ * DEBUG HELPER: Logs the type and value of month column headers starting from FIRST_MONTH.
+ * Run this once to confirm what format the headers are stored in.
+ */
+function debugHeaders() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.TRACKER_SHEET);
+  const headers = sheet.getRange(2, 1, 1, sheet.getLastColumn()).getValues()[0];
+  for (let i = CONFIG.TRACKER_COLS.FIRST_MONTH - 1; i < Math.min(headers.length, CONFIG.TRACKER_COLS.FIRST_MONTH + 5); i++) {
+    const h = headers[i];
+    Logger.log(`Col ${i+1}: type=${typeof h}, value=${h}, isDate=${h instanceof Date}, formatted=${h instanceof Date ? Utilities.formatDate(h, Session.getScriptTimeZone(), 'MMM-yyyy') : 'N/A'}`);
+  }
 }

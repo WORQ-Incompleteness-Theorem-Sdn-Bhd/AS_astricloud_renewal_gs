@@ -4,7 +4,7 @@
  */
 
 // Configuration
-const CONFIG = {
+var CONFIG = {
   TRACKER_SHEET: 'TRACKER',
   FORM_RESPONSES_SHEET: 'Form Responses 1',
   RENEWAL_SHEET: 'Renewal Status',
@@ -18,12 +18,9 @@ const CONFIG = {
     WORQ_LOCATION: 3,   // C
     COMPANY_EMAIL: 4,   // D
     PILOT_NUMBER: 5,    // E
-    QUOTATION: 6,       // F
-    PO: 7,              // G
-    DEPOSIT: 8,         // H
-    CONTRACT_START: 9,  // I
-    CONTRACT_END: 10,   // J
-    FIRST_MONTH: 11     // K (Feb-2024)
+    CONTRACT_START: 6,  // F
+    CONTRACT_END: 7,    // G
+    FIRST_MONTH: 8      // H (Feb-2024)
   },
   
   // Column positions in FORM RESPONSES 1
