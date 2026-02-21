@@ -14,9 +14,17 @@ function copyNewEntriesToTracker() {
   
   const formData = formSheet.getDataRange().getValues();
   const trackerData = trackerSheet.getDataRange().getValues();
-  
+
   // Get existing company names in tracker (skip header)
-  const existingCompanies = trackerData.slice(1).map(row => row[CONFIG.TRACKER_COLS.COMPANY_NAME - 1]);
+  const trackerCompanies = trackerData.slice(1).map(row => row[CONFIG.TRACKER_COLS.COMPANY_NAME - 1]);
+
+  // Also check ARCHIVED sheet so terminated companies are not re-added
+  const archivedSheet = ss.getSheetByName(CONFIG.ARCHIVED_SHEET);
+  const archivedCompanies = archivedSheet
+    ? archivedSheet.getDataRange().getValues().slice(1).map(row => row[CONFIG.TRACKER_COLS.COMPANY_NAME - 1])
+    : [];
+
+  const existingCompanies = [...trackerCompanies, ...archivedCompanies];
   
   let copiedCount = 0;
   
@@ -33,15 +41,16 @@ function copyNewEntriesToTracker() {
       const lastNo = trackerData.length > 1 ? trackerData[trackerData.length - 1][CONFIG.TRACKER_COLS.NO - 1] : 0;
       const newNo = parseInt(lastNo) + 1;
       
-      // Prepare row data (columns A through G)
+      // Prepare row data (columns A through H)
       const newRow = [
         newNo,                  // A - NO
         companyName,            // B - Company Name
         location,               // C - WORQ Location
         email,                  // D - Company Email
         '',                     // E - Pilot Number (empty - to be filled manually)
-        '',                     // F - Contract Start (auto-filled on pilot number entry)
-        ''                      // G - Contract End (auto-filled on pilot number entry)
+        '',                     // F - Renewal Status
+        '',                     // G - Contract Start (auto-filled on pilot number entry)
+        ''                      // H - Contract End (auto-filled on pilot number entry)
       ];
       
       // Append to tracker
@@ -171,6 +180,48 @@ function populate12MonthsPaid(sheet, rowNumber) {
   }
   
   Logger.log(`Populated 12 months for row ${rowNumber}`);
+}
+
+/**
+ * Backfill missing paid status for rows that have contract dates but no monthly data.
+ * Rows with existing monthly data are left untouched.
+ */
+function backfillMissingPaidStatus() {
+  const trackerSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.TRACKER_SHEET);
+  if (!trackerSheet) {
+    Logger.log('ERROR: TRACKER sheet not found');
+    return;
+  }
+
+  const data = trackerSheet.getDataRange().getValues();
+  let filledCount = 0;
+  let skippedCount = 0;
+
+  // Data starts at row 3 (i=2)
+  for (let i = 2; i < data.length; i++) {
+    const companyName  = data[i][CONFIG.TRACKER_COLS.COMPANY_NAME - 1];
+    const contractStart = data[i][CONFIG.TRACKER_COLS.CONTRACT_START - 1];
+
+    if (!contractStart) continue;
+
+    // Check if any monthly data already exists (FIRST_MONTH column onwards)
+    const monthlyData = data[i].slice(CONFIG.TRACKER_COLS.FIRST_MONTH - 1);
+    const hasExistingData = monthlyData.some(val => val !== '' && val !== null && val !== undefined);
+
+    if (hasExistingData) {
+      Logger.log(`Row ${i + 1} SKIPPED — ${companyName} | Monthly data already exists`);
+      skippedCount++;
+      continue;
+    }
+
+    // No monthly data — populate paid from contract start
+    populate12MonthsPaid(trackerSheet, i + 1);
+    Logger.log(`Row ${i + 1} FILLED — ${companyName} | Populated paid from ${new Date(contractStart).toDateString()}`);
+    filledCount++;
+  }
+
+  Logger.log(`Backfill complete: ${filledCount} filled, ${skippedCount} skipped (existing data preserved)`);
+  SpreadsheetApp.getUi().alert(`✅ Backfill complete\n\n${filledCount} rows populated\n${skippedCount} rows skipped (existing data preserved)`);
 }
 
 /**

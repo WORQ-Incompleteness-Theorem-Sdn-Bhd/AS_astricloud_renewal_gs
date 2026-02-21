@@ -18,9 +18,10 @@ var CONFIG = {
     WORQ_LOCATION: 3,   // C
     COMPANY_EMAIL: 4,   // D
     PILOT_NUMBER: 5,    // E
-    CONTRACT_START: 6,  // F
-    CONTRACT_END: 7,    // G
-    FIRST_MONTH: 8      // H (Feb-2024)
+    RENEWAL_STATUS: 6,  // F
+    CONTRACT_START: 7,  // G
+    CONTRACT_END: 8,    // H
+    FIRST_MONTH: 9      // I (Feb-2024)
   },
   
   // Column positions in FORM RESPONSES 1
@@ -48,7 +49,7 @@ var CONFIG = {
   FIRST_MONTH_DATE: new Date('2024-02-01'),
   
   // Reminder timing (months before expiry)
-  REMINDER_MONTHS: [3, 2, 1]
+  REMINDER_MONTHS: [3, 2, 1, 0]
 };
 
 /**
@@ -62,7 +63,9 @@ function onOpen() {
     .addItem('📧 Check & Send Renewal Reminders', 'checkAndSendReminders')
     .addItem('🔄 Sync Renewals from Renewal Status', 'syncRenewals')
     .addItem('📦 Archive Terminated Customers', 'archiveTerminated')
+    .addItem('🔁 Backfill Missing Paid Status', 'backfillMissingPaidStatus')
     .addSeparator()
+    .addItem('🔽 Setup Renewal Status Dropdown', 'setupRenewalStatusDropdown')
     .addItem('⚙️ Setup Time-based Triggers', 'setupTriggers')
     .addItem('🗑️ Remove All Triggers', 'removeAllTriggers')
     .addToUi();
