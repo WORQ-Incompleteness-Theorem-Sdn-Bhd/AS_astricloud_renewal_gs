@@ -2,7 +2,7 @@
 
 ## Overview
 
-A Google Apps Script automation system that manages customer contract tracking for WORQ's virtual landline (AstriCloud) service. The system automates the full lifecycle of customer contracts: intake from a Google Form, payment tracking on a monthly grid, renewal reminders via email, renewal processing, and archival of terminated customers.
+A Google Apps Script automation system that manages customer contract tracking for WORQ's virtual landline (AstriCloud) service. The system automates the full lifecycle of customer contracts: intake from a Google Form, payment tracking on a monthly grid, renewal reminders via email, renewal processing, archival of terminated customers, and restoration of archived customers who renew at the last minute.
 
 ## Google Workspace Links
 
@@ -25,7 +25,7 @@ The central tracking sheet with a monthly payment grid. It has **two header rows
 
 | Column | Field | Description |
 |--------|-------|-------------|
-| A | NO | Auto-incremented row number |
+| A | NO | Auto-incremented row number via SEQUENCE formula in A3 — never written to directly by scripts |
 | B | Company Name | Customer company name |
 | C | WORQ Location | Which WORQ outlet the customer belongs to |
 | D | Company Email | Contact email for the customer |
@@ -48,7 +48,7 @@ Auto-populated by the linked Google Form.
 | F-X | Other fields | Ignored |
 
 ### 3. ARCHIVED
-Storage for terminated customer records. Same column structure as TRACKER. Terminated companies are never re-added to TRACKER by the copy function.
+Storage for terminated customer records. Same column structure as TRACKER (col A = SEQUENCE formula, col B onwards = customer data). Terminated companies are never re-added to TRACKER by the copy function. Archived companies can be restored back to TRACKER via `[07] Restore Archived Customer`.
 
 ---
 
@@ -79,12 +79,13 @@ The main entry point. Contains the global `CONFIG` object (declared with `var` f
 **Menu items (in order):**
 | # | Label | Function |
 |---|-------|----------|
-| [01] | Highlight Current Month | `highlightCurrentMonth()` |
-| [02] | Copy New Entries from Form | `copyNewEntriesToTracker()` |
-| [03] | Check & Send Renewal Reminders | `checkAndSendReminders()` |
-| [04] | Backfill Missing Paid Status | `backfillMissingPaidStatus()` |
-| [05] | Sync Renewals from Renewal Status | `syncRenewals()` |
-| [06] | Archive Terminated Customers | `archiveTerminated()` |
+| [01] | Copy New Entries from Form | `copyNewEntriesToTracker()` |
+| [02] | Check & Send Renewal Reminders | `checkAndSendReminders()` |
+| [03] | Backfill Missing Paid Status | `backfillMissingPaidStatus()` |
+| [04] | Sync Renewals from Renewal Status | `syncRenewals()` |
+| [05] | Archive Terminated Customers | `archiveTerminated()` |
+| [06] | Sort by Contract Start Date | `sortByContractStartDate()` |
+| [07] | Restore Archived Customer | `showRestoreArchivedDialog()` |
 | — | *(separator)* | — |
 | | Setup Renewal Status Dropdown | `setupRenewalStatusDropdown()` |
 | | Remove Archived Duplicates from Tracker | `removeArchivedDuplicatesFromTracker()` |
@@ -191,11 +192,59 @@ Moves terminated customers from TRACKER to ARCHIVED.
 
 | Function | Type | Description |
 |----------|------|-------------|
-| `archiveTerminated()` | Manual | Scans monthly status columns (col I onwards) for `terminate`, copies the full row to ARCHIVED, deletes from TRACKER. Processes bottom-to-top to avoid index shifting. |
+| `archiveTerminated()` | Manual | Scans monthly status columns (col I onwards) for `terminate`, copies columns B onwards to ARCHIVED (skipping col A), deletes from TRACKER. Processes bottom-to-top to avoid index shifting. |
 | `removeArchivedDuplicatesFromTracker()` | Manual | Scans TRACKER for any company that already exists in ARCHIVED (case-insensitive) and removes it. Use as a one-time cleanup if companies were re-added before the duplicate-check fix. |
 
-- Preserves all data (entire row is copied as-is to ARCHIVED)
+- Writes columns B onwards only — column A (SEQUENCE formula) is never overwritten in either sheet
 - Once archived, `copyNewEntriesToTracker()` will never re-add the company
+
+---
+
+### 07 SortByContractDate.gs — TRACKER Sorting
+Sorts TRACKER data rows by Contract Start Date, oldest to newest.
+
+| Function | Type | Description |
+|----------|------|-------------|
+| `sortByContractStartDate()` | Manual | Sorts all TRACKER data rows (row 3+) by Contract Start Date ascending. Rows without a contract date are pushed to the bottom. Shows a summary alert on completion. |
+
+- Both header rows (row 1 = year labels, row 2 = month labels) are preserved
+- Writes columns B onwards only — column A (SEQUENCE formula) is left untouched
+- Rows with no company name are treated as undated and moved to the bottom
+
+---
+
+### 08 RestoreArchived.gs — Restore Archived Customers
+Restores archived customers back to TRACKER for last-minute renewals where the contract end date has lapsed but the company decides to renew.
+
+| Function | Type | Description |
+|----------|------|-------------|
+| `showRestoreArchivedDialog()` | Manual | Opens an HTML modal dialog listing all companies in the ARCHIVED sheet. User selects one or more to restore. Shows an alert if ARCHIVED is empty. |
+| `restoreArchivedCompanies(indices)` | Called from dialog | Moves selected rows from ARCHIVED back to TRACKER (columns B onwards, skipping col A), deletes them from ARCHIVED, then re-sorts TRACKER by Contract Start Date. Shows a confirmation alert listing restored companies. |
+| `formatDateForDialog_(value)` | Internal | Formats a date value (Date object or string) to `dd MMM yyyy` for display in the HTML dialog. |
+| `sortTrackerSilently_()` | Internal | Sorts TRACKER by Contract Start Date without showing an alert — used internally after restore so the caller controls the feedback shown to the user. |
+
+**Restore workflow:**
+1. Admin runs `[07] Restore Archived Customer` from the menu
+2. HTML modal opens listing all archived companies with their Contract Start and End dates
+3. Admin ticks one or more companies (checkbox per row; "Select all" header checkbox available)
+4. Admin clicks **Restore Selected**
+5. Selected rows are moved from ARCHIVED to TRACKER (columns B onwards, skipping col A)
+6. TRACKER is automatically re-sorted by Contract Start Date (oldest → newest)
+7. Confirmation alert shows which companies were restored
+
+> After restoring, the admin should update the company's Renewal Status (col F) and run `[04] Sync Renewals` as needed to extend the contract dates and repopulate monthly statuses.
+
+---
+
+### RestoreArchivedDialog.html — Restore Dialog UI
+HTML modal rendered by `showRestoreArchivedDialog()` via `HtmlService.createTemplateFromFile()`.
+
+- Checkbox table listing all archived companies (Company Name, Contract Start, Contract End)
+- "Select all" header checkbox with indeterminate state support
+- Selected count shown in the footer
+- **Restore Selected** button (disabled until at least one company is checked)
+- Calls `google.script.run.restoreArchivedCompanies(indices)` on submit
+- Uses `<?!= companies ?>` (unescaped scriptlet) to inject the JSON array — required to prevent HtmlService from HTML-encoding the double quotes
 
 ---
 
@@ -223,6 +272,15 @@ Google Form
     |
     |--- archiveTerminated() ──→ [ARCHIVED]
     |       (manual step after syncRenewals sets "Terminated")
+    |                               |
+    |                               | showRestoreArchivedDialog()
+    |                               | (last-minute renewal — company decides to renew after lapse)
+    |                               |
+    |◄──────────────────────────────┘
+    |    restoreArchivedCompanies() moves row back, re-sorts TRACKER
+    |    Admin then updates col F and runs syncRenewals() to extend contract
+    |
+    |--- sortByContractStartDate() → re-sorts TRACKER rows oldest → newest
     |
     |--- highlightCurrentMonth() → highlights current month column in cyan
     |

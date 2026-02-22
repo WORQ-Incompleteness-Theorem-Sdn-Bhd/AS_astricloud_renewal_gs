@@ -64,6 +64,7 @@ function onOpen() {
     .addItem('[04] Sync Renewals from Renewal Status', 'syncRenewals')
     .addItem('[05] Archive Terminated Customers', 'archiveTerminated')
     .addItem('[06] Sort by Contract Start Date', 'sortByContractStartDate')
+    .addItem('[07] Restore Archived Customer', 'showRestoreArchivedDialog')
     .addSeparator()
     .addItem('Setup Renewal Status Dropdown', 'setupRenewalStatusDropdown')
     .addItem('Remove Archived Duplicates from Tracker', 'removeArchivedDuplicatesFromTracker')

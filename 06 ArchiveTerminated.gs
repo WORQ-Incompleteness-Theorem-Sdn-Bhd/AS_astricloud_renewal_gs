@@ -30,8 +30,9 @@ function archiveTerminated() {
     }
 
     if (hasTerminate) {
-      // Copy entire row to ARCHIVED
-      archivedSheet.appendRow(data[i]);
+      // Copy columns B onwards to ARCHIVED — skip column A (SEQUENCE formula handles numbering)
+      const newArchivedRow = archivedSheet.getLastRow() + 1;
+      archivedSheet.getRange(newArchivedRow, 2, 1, data[i].length - 1).setValues([data[i].slice(1)]);
 
       // Delete from TRACKER
       trackerSheet.deleteRow(i + 1);
