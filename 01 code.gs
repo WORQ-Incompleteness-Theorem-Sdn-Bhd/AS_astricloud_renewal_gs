@@ -63,18 +63,18 @@ function onOpen() {
     .addItem('[03] Backfill Missing Paid Status', 'backfillMissingPaidStatus')
     .addItem('[04] Sync Renewals from Renewal Status', 'syncRenewals')
     .addItem('[05] Archive Terminated Customers', 'archiveTerminated')
-    .addItem('[06] Sort by Contract Start Date', 'sortByContractStartDate')
-    .addItem('[07] Restore Archived Customer', 'showRestoreArchivedDialog')
-    .addItem('[08] Highlight Renewal Urgency', 'highlightRenewalUrgency')
+    .addItem('[06] Restore Archived Customer', 'showRestoreArchivedDialog')
     .addSeparator()
-    .addItem('Find Lapsed Contracts', 'findLapsedContracts')
+    .addItem('Sort by Contract Start Date', 'sortByContractStartDate')
+    .addItem('Highlight Renewal Urgency', 'highlightRenewalUrgency')
     .addItem('Clear Renewal Highlights', 'clearRenewalHighlights')
-    .addItem('Setup Renewal Status Dropdown', 'setupRenewalStatusDropdown')
-    .addItem('Remove Archived Duplicates from Tracker', 'removeArchivedDuplicatesFromTracker')
-    .addSeparator()
-    .addItem('Setup Auto-Reminder Trigger (Daily 9 AM)', 'setupAutoReminderTrigger')
-    .addItem('Remove Auto-Reminder Trigger', 'removeAutoReminderTrigger')
+    .addItem('Find Lapsed Contracts', 'findLapsedContracts')
     .addToUi();
+    // .addItem('Setup Renewal Status Dropdown', 'setupRenewalStatusDropdown')
+    // .addItem('Remove Archived Duplicates from Tracker', 'removeArchivedDuplicatesFromTracker')
+    // .addSeparator()
+    // .addItem('Setup Auto-Reminder Trigger (Daily 9 AM)', 'setupAutoReminderTrigger')
+    // .addItem('Remove Auto-Reminder Trigger', 'removeAutoReminderTrigger')
 }
 
 /**
