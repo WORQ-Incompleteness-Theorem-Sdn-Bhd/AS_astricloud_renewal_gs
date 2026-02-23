@@ -21,6 +21,7 @@ Google Apps Script automation for WORQ's AstriCloud (virtual landline) service â
 | TRACKER | Main customer tracking grid with monthly payment status columns |
 | Form Responses 1 | Auto-populated by the linked Google Form |
 | ARCHIVED | Terminated customer records; can be restored back to TRACKER via [07] |
+| Addresses | WORQ location â†’ email lookup table; used to CC the correct location inbox on customer emails |
 
 ## File Structure
 
