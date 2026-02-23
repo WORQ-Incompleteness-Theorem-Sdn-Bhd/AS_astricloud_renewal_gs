@@ -1,6 +1,8 @@
 PENDING ITEMS TO DO
 
+8 add cc to outlet for all email
 
+9 improve the email text wrapping 
 
 
 DONE

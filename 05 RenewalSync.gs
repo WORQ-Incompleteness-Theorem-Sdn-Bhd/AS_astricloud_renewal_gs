@@ -27,18 +27,19 @@ function syncRenewals() {
     const pilotNumber   = trackerData[i][CONFIG.TRACKER_COLS.PILOT_NUMBER   - 1];
     const renewalStatus = trackerData[i][CONFIG.TRACKER_COLS.RENEWAL_STATUS - 1];
     const contractEnd   = trackerData[i][CONFIG.TRACKER_COLS.CONTRACT_END   - 1];
+    const worqLocation  = trackerData[i][CONFIG.TRACKER_COLS.WORQ_LOCATION  - 1];
 
     if (!contractEnd) continue;
 
     const currentEndDate = new Date(contractEnd);
 
     if (renewalStatus === 'Not Renewing') {
-      toTerminate.push({ rowIdx: i, companyName, companyEmail, pilotNumber, currentEndDate });
+      toTerminate.push({ rowIdx: i, companyName, companyEmail, pilotNumber, currentEndDate, worqLocation });
     } else if (renewalStatus === 'Renew') {
       const newStartDate = new Date(currentEndDate.getFullYear(), currentEndDate.getMonth() + 1, 1);
       const newEndDate   = new Date(currentEndDate);
       newEndDate.setFullYear(newEndDate.getFullYear() + 1);
-      toRenew.push({ rowIdx: i, companyName, companyEmail, pilotNumber, currentEndDate, newStartDate, newEndDate });
+      toRenew.push({ rowIdx: i, companyName, companyEmail, pilotNumber, currentEndDate, newStartDate, newEndDate, worqLocation });
     }
   }
 
@@ -89,7 +90,7 @@ function syncRenewals() {
     markMonthCell(trackerSheet, r.rowIdx + 1, r.currentEndDate, 'terminate');
     trackerSheet.getRange(r.rowIdx + 1, CONFIG.TRACKER_COLS.RENEWAL_STATUS).setValue('Terminated');
     if (r.companyEmail) {
-      sendTerminationEmail(r.companyName, r.companyEmail, r.pilotNumber, r.currentEndDate);
+      sendTerminationEmail(r.companyName, r.companyEmail, r.pilotNumber, r.currentEndDate, r.worqLocation);
       emailsSent++;
     }
     terminatedCompanies.push(r.companyName);
@@ -102,7 +103,7 @@ function syncRenewals() {
     extendMonthHeaders(trackerSheet, r.newEndDate);
     populate12MonthsFromDate(trackerSheet, r.rowIdx + 1, r.newStartDate);
     if (r.companyEmail) {
-      sendRenewalConfirmationEmail(r.companyName, r.companyEmail, r.pilotNumber, r.newStartDate, r.newEndDate);
+      sendRenewalConfirmationEmail(r.companyName, r.companyEmail, r.pilotNumber, r.newStartDate, r.newEndDate, r.worqLocation);
       emailsSent++;
     }
     trackerSheet.getRange(r.rowIdx + 1, CONFIG.TRACKER_COLS.RENEWAL_STATUS).setValue('Renewed');

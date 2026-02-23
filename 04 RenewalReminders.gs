@@ -26,6 +26,7 @@ function checkAndSendReminders() {
     const companyEmail   = data[i][CONFIG.TRACKER_COLS.COMPANY_EMAIL - 1];
     const pilotNumber    = data[i][CONFIG.TRACKER_COLS.PILOT_NUMBER - 1];
     const renewalStatus  = data[i][CONFIG.TRACKER_COLS.RENEWAL_STATUS - 1];
+    const worqLocation   = data[i][CONFIG.TRACKER_COLS.WORQ_LOCATION - 1];
 
     if (!contractEnd || !companyEmail) {
       Logger.log(`Row ${i + 1} SKIPPED — ${companyName || '(no name)'} | Missing: ${!contractEnd ? 'contractEnd ' : ''}${!companyEmail ? 'companyEmail' : ''}`);
@@ -52,7 +53,7 @@ function checkAndSendReminders() {
         continue;
       }
 
-      sendRenewalReminderEmail(companyName, companyEmail, pilotNumber, endDate, monthsUntilExpiry);
+      sendRenewalReminderEmail(companyName, companyEmail, pilotNumber, endDate, monthsUntilExpiry, worqLocation);
 
       // Mark as Pending in TRACKER col F with dropdown
       const pendingCell = trackerSheet.getRange(i + 1, CONFIG.TRACKER_COLS.RENEWAL_STATUS);
@@ -122,37 +123,36 @@ function getMonthsDifference(date1, date2) {
 /**
  * Send renewal reminder email
  */
-function sendRenewalReminderEmail(companyName, email, pilotNumber, expiryDate, monthsLeft) {
+function sendRenewalReminderEmail(companyName, email, pilotNumber, expiryDate, monthsLeft, worqLocation) {
   const expiryStr = Utilities.formatDate(expiryDate, Session.getScriptTimeZone(), 'dd MMM yyyy');
+  pilotNumber = formatPilotNumber(pilotNumber);
 
   const subject = `⏰ Virtual Landline Renewal Reminder - ${monthsLeft} Month${monthsLeft > 1 ? 's' : ''} Until Expiry`;
 
-  const body = `
-Dear ${companyName},
-
-This is a friendly reminder that your virtual landline service is expiring soon.
-
-${pilotNumber ? `📞 Pilot Number: ${pilotNumber}\n` : ''}📅 Expiry Date: ${expiryStr}
-⏳ Time Remaining: ${monthsLeft} month${monthsLeft > 1 ? 's' : ''}
-
-To ensure uninterrupted service, please confirm your renewal at your earliest convenience.
-
-If you have any questions or would like to discuss renewal options, please don't hesitate to reach out.
-
-Best regards,
-WORQ IT Operations Team
-${CONFIG.EMAIL_FROM}
+  const htmlBody = `
+<p>Dear ${companyName},</p>
+<p>This is a friendly reminder that your virtual landline service is expiring soon.</p>
+<p>
+  ${pilotNumber ? `<strong>📞 Pilot Number: ${pilotNumber}</strong><br>` : ''}
+  <strong>📅 Expiry Date: ${expiryStr}</strong><br>
+  <strong>⏳ Time Remaining: ${monthsLeft} month${monthsLeft > 1 ? 's' : ''}</strong>
+</p>
+<p>To ensure uninterrupted service, please confirm your renewal by replying to this email at your earliest convenience.</p>
+<p>If you have any questions, please don't hesitate to reach out.</p>
+<p>
+  <strong>Best regards,</strong><br>
+  <strong>WORQ Operations Team</strong>
+</p>
 `;
 
-  try {
-    MailApp.sendEmail({
-      to: email,
-      subject: subject,
-      body: body,
-      name: 'WORQ IT Operations'
-    });
+  const locationEmail = getLocationEmail(worqLocation);
 
-    Logger.log(`Reminder sent to ${companyName} (${email})`);
+  try {
+    const options = { to: email, subject: subject, htmlBody: htmlBody, name: 'WORQ Operations Team', replyTo: 'it@worq.space' };
+    if (locationEmail) options.cc = locationEmail;
+    MailApp.sendEmail(options);
+
+    Logger.log(`Reminder sent to ${companyName} (${email})${locationEmail ? ` | CC: ${locationEmail}` : ''}`);
   } catch (e) {
     Logger.log(`ERROR sending email to ${email}: ${e.message}`);
   }
@@ -161,41 +161,38 @@ ${CONFIG.EMAIL_FROM}
 /**
  * Send renewal confirmation (thank you) email with new contract tenure
  */
-function sendRenewalConfirmationEmail(companyName, email, pilotNumber, newStartDate, newEndDate) {
+function sendRenewalConfirmationEmail(companyName, email, pilotNumber, newStartDate, newEndDate, worqLocation) {
   const newStartStr = Utilities.formatDate(newStartDate, Session.getScriptTimeZone(), 'dd MMM yyyy');
   const newEndStr   = Utilities.formatDate(newEndDate,   Session.getScriptTimeZone(), 'dd MMM yyyy');
+  pilotNumber = formatPilotNumber(pilotNumber);
 
   const subject = `✅ Virtual Landline Renewal Confirmed - Thank You, ${companyName}!`;
 
-  const body = `
-Dear ${companyName},
-
-Thank you for renewing your virtual landline service with WORQ! We truly appreciate your continued support.
-
-Your service has been successfully renewed with the following details:
-
-${pilotNumber ? `📞 Pilot Number: ${pilotNumber}\n` : ''}📅 New Service Period: ${newStartStr} – ${newEndStr}
-
-Your virtual landline will remain active without interruption throughout this period.
-
-If you have any questions or require any assistance, please don't hesitate to reach out to us.
-
-Thank you once again for choosing WORQ. We look forward to continuing to serve you.
-
-Best regards,
-WORQ IT Operations Team
-${CONFIG.EMAIL_FROM}
+  const htmlBody = `
+<p>Dear ${companyName},</p>
+<p>Thank you for renewing your virtual landline service with WORQ! We truly appreciate your continued support.</p>
+<p>Your service has been successfully renewed with the following details:</p>
+<p>
+  ${pilotNumber ? `<strong>📞 Pilot Number: ${pilotNumber}</strong><br>` : ''}
+  <strong>📅 New Service Period: ${newStartStr} – ${newEndStr}</strong>
+</p>
+<p>Your virtual landline will remain active without interruption throughout this period.</p>
+<p>If you have any questions or require any assistance, please don't hesitate to reach out to us.</p>
+<p>Thank you once again for choosing WORQ. We look forward to serve you.</p>
+<p>
+  <strong>Best regards,</strong><br>
+  <strong>WORQ Operations Team</strong>
+</p>
 `;
 
-  try {
-    MailApp.sendEmail({
-      to: email,
-      subject: subject,
-      body: body,
-      name: 'WORQ IT Operations'
-    });
+  const locationEmail = getLocationEmail(worqLocation);
 
-    Logger.log(`Renewal confirmation sent to ${companyName} (${email})`);
+  try {
+    const options = { to: email, subject: subject, htmlBody: htmlBody, name: 'WORQ Operations Team', replyTo: 'it@worq.space' };
+    if (locationEmail) options.cc = locationEmail;
+    MailApp.sendEmail(options);
+
+    Logger.log(`Renewal confirmation sent to ${companyName} (${email})${locationEmail ? ` | CC: ${locationEmail}` : ''}`);
   } catch (e) {
     Logger.log(`ERROR sending confirmation to ${email}: ${e.message}`);
   }
@@ -204,41 +201,77 @@ ${CONFIG.EMAIL_FROM}
 /**
  * Send termination confirmation email to customer who chose not to renew
  */
-function sendTerminationEmail(companyName, email, pilotNumber, contractEndDate) {
+function sendTerminationEmail(companyName, email, pilotNumber, contractEndDate, worqLocation) {
   const endStr = Utilities.formatDate(contractEndDate, Session.getScriptTimeZone(), 'dd MMM yyyy');
+  pilotNumber = formatPilotNumber(pilotNumber);
 
   const subject = `Virtual Landline Service Termination Confirmation - ${companyName}`;
 
-  const body = `
-Dear ${companyName},
-
-We have received and acknowledged your decision not to renew your virtual landline service with WORQ.
-
-This email serves as confirmation of your termination request.
-
-${pilotNumber ? `📞 Pilot Number: ${pilotNumber}\n` : ''}📅 Service End Date: ${endStr}
-
-Your virtual landline service will remain active until the above date, after which it will be deactivated.
-
-We're sorry to see you go and hope to have the opportunity to serve you again in the future. If you change your mind or have any questions before your service ends, please do not hesitate to reach out.
-
-Thank you for being a valued WORQ customer.
-
-Best regards,
-WORQ IT Operations Team
-${CONFIG.EMAIL_FROM}
+  const htmlBody = `
+<p>Dear ${companyName},</p>
+<p>We have received and acknowledged your decision not to renew your virtual landline service with WORQ.</p>
+<p>This email serves as confirmation of your termination request.</p>
+<p>
+  ${pilotNumber ? `<strong>📞 Pilot Number: ${pilotNumber}</strong><br>` : ''}
+  <strong>📅 Service End Date: ${endStr}</strong>
+</p>
+<p>Your virtual landline service will remain active until the above date, after which it will be deactivated.</p>
+<p>We're sorry to see you go and hope to have the opportunity to serve you again in the future. If you change your mind or have any questions before your service ends, please do not hesitate to reach out.</p>
+<p>Thank you for being a valued WORQ customer.</p>
+<p>
+  <strong>Best regards,</strong><br>
+  <strong>WORQ Operations Team</strong>
+</p>
 `;
 
-  try {
-    MailApp.sendEmail({
-      to: email,
-      subject: subject,
-      body: body,
-      name: 'WORQ IT Operations'
-    });
+  const locationEmail = getLocationEmail(worqLocation);
 
-    Logger.log(`Termination confirmation sent to ${companyName} (${email})`);
+  try {
+    const options = { to: email, subject: subject, htmlBody: htmlBody, name: 'WORQ Operations Team', replyTo: 'it@worq.space' };
+    if (locationEmail) options.cc = locationEmail;
+    MailApp.sendEmail(options);
+
+    Logger.log(`Termination confirmation sent to ${companyName} (${email})${locationEmail ? ` | CC: ${locationEmail}` : ''}`);
   } catch (e) {
     Logger.log(`ERROR sending termination email to ${email}: ${e.message}`);
   }
+}
+
+/**
+ * Ensure pilot number has a leading zero (Google Sheets drops it when stored as a number).
+ */
+function formatPilotNumber(pilotNumber) {
+  if (!pilotNumber) return null;
+  const str = String(pilotNumber).trim();
+  return str.startsWith('0') ? str : '0' + str;
+}
+
+/**
+ * Look up the location email from the Addresses sheet by matching the site name (col A).
+ * Returns the email string (col C) or null if not found.
+ */
+function getLocationEmail(worqLocation) {
+  if (!worqLocation) return null;
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const addressSheet = ss.getSheetByName('Addresses');
+  if (!addressSheet) {
+    Logger.log('getLocationEmail: Addresses sheet not found');
+    return null;
+  }
+
+  const data = addressSheet.getDataRange().getValues();
+  const locationStr = worqLocation.toString().trim().toLowerCase();
+
+  // Row 1 is the header — start from row index 1
+  for (let i = 1; i < data.length; i++) {
+    const siteName = data[i][0]; // Column A
+    if (siteName && siteName.toString().trim().toLowerCase() === locationStr) {
+      const locationEmail = data[i][2]; // Column C
+      return locationEmail ? locationEmail.toString().trim() : null;
+    }
+  }
+
+  Logger.log(`getLocationEmail: No match found for location "${worqLocation}"`);
+  return null;
 }
