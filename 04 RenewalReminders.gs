@@ -124,6 +124,7 @@ function getMonthsDifference(date1, date2) {
  * Send renewal reminder email
  */
 function sendRenewalReminderEmail(companyName, email, pilotNumber, expiryDate, monthsLeft, worqLocation) {
+  companyName = toProperCase(companyName);
   const expiryStr = Utilities.formatDate(expiryDate, Session.getScriptTimeZone(), 'dd MMM yyyy');
   pilotNumber = formatPilotNumber(pilotNumber);
 
@@ -162,6 +163,7 @@ function sendRenewalReminderEmail(companyName, email, pilotNumber, expiryDate, m
  * Send renewal confirmation (thank you) email with new contract tenure
  */
 function sendRenewalConfirmationEmail(companyName, email, pilotNumber, newStartDate, newEndDate, worqLocation) {
+  companyName = toProperCase(companyName);
   const newStartStr = Utilities.formatDate(newStartDate, Session.getScriptTimeZone(), 'dd MMM yyyy');
   const newEndStr   = Utilities.formatDate(newEndDate,   Session.getScriptTimeZone(), 'dd MMM yyyy');
   pilotNumber = formatPilotNumber(pilotNumber);
@@ -202,6 +204,7 @@ function sendRenewalConfirmationEmail(companyName, email, pilotNumber, newStartD
  * Send termination confirmation email to customer who chose not to renew
  */
 function sendTerminationEmail(companyName, email, pilotNumber, contractEndDate, worqLocation) {
+  companyName = toProperCase(companyName);
   const endStr = Utilities.formatDate(contractEndDate, Session.getScriptTimeZone(), 'dd MMM yyyy');
   pilotNumber = formatPilotNumber(pilotNumber);
 
@@ -244,6 +247,86 @@ function formatPilotNumber(pilotNumber) {
   if (!pilotNumber) return null;
   const str = String(pilotNumber).trim();
   return str.startsWith('0') ? str : '0' + str;
+}
+
+/**
+ * Convert a string to Proper Case (Title Case).
+ * e.g. "INCOMPLETENESS THEOREM SDN BHD" → "Incompleteness Theorem Sdn Bhd"
+ */
+function toProperCase(str) {
+  if (!str) return str;
+  return String(str).trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/**
+ * Send a single vendor notification email listing all renewals and terminations
+ * processed in this sync run.
+ * @param {Array} renewals    - items from toRenew  (needs: companyName, newEndDate)
+ * @param {Array} terminations - items from toTerminate (needs: companyName, currentEndDate)
+ */
+function sendVendorNotificationEmail(renewals, terminations) {
+  const tz = Session.getScriptTimeZone();
+  const monthYear = Utilities.formatDate(new Date(), tz, 'MMMM yyyy');
+  const subject = `Astricloud Landline Subscription Update - ${monthYear}`;
+
+  // Build table rows — terminations first, then renewals (matches screenshot order)
+  let tableRows = '';
+
+  for (const r of terminations) {
+    const endStr = Utilities.formatDate(r.currentEndDate, tz, 'dd-MMM-yyyy');
+    const name   = toProperCase(r.companyName);
+    tableRows += `
+      <tr>
+        <td style="border:1px solid #000;padding:6px 12px;">${name}</td>
+        <td style="border:1px solid #000;padding:6px 12px;text-align:center;">${endStr}</td>
+        <td style="border:1px solid #000;padding:6px 12px;text-align:center;color:#cc0000;font-weight:bold;">Terminate</td>
+        <td style="border:1px solid #000;padding:6px 12px;">Remove from WORQ Billing</td>
+      </tr>`;
+  }
+
+  for (const r of renewals) {
+    const endStr = Utilities.formatDate(r.newEndDate, tz, 'dd-MMM-yyyy');
+    const name   = toProperCase(r.companyName);
+    tableRows += `
+      <tr>
+        <td style="border:1px solid #000;padding:6px 12px;">${name}</td>
+        <td style="border:1px solid #000;padding:6px 12px;text-align:center;">${endStr}</td>
+        <td style="border:1px solid #000;padding:6px 12px;text-align:center;color:#007700;font-weight:bold;">Renew</td>
+        <td style="border:1px solid #000;padding:6px 12px;">Continue on WORQ Billing</td>
+      </tr>`;
+  }
+
+  const htmlBody = `
+<p>Hi Theinosha,</p>
+<p>Please assist to process the below renewal / termination decision by the customer.</p>
+<table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;">
+  <tr style="background:#f2f2f2;">
+    <th style="border:1px solid #000;padding:8px 14px;text-align:left;">Companies</th>
+    <th style="border:1px solid #000;padding:8px 14px;">End</th>
+    <th style="border:1px solid #000;padding:8px 14px;">Final Status</th>
+    <th style="border:1px solid #000;padding:8px 14px;text-align:left;">AstriCloud Action</th>
+  </tr>
+  ${tableRows}
+</table>
+<br>
+<p>
+  <strong>Best regards,</strong><br>
+  <strong>WORQ Operations Team</strong>
+</p>`;
+
+  try {
+    MailApp.sendEmail({
+      to:       CONFIG.VENDOR_EMAIL,
+      cc:       CONFIG.VENDOR_CC,
+      subject:  subject,
+      htmlBody: htmlBody,
+      name:     'WORQ Operations Team',
+      replyTo:  'it@worq.space'
+    });
+    Logger.log(`Vendor notification sent to ${CONFIG.VENDOR_EMAIL} | CC: ${CONFIG.VENDOR_CC}`);
+  } catch (e) {
+    Logger.log(`ERROR sending vendor notification: ${e.message}`);
+  }
 }
 
 /**

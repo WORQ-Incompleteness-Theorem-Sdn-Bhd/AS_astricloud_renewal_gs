@@ -69,8 +69,9 @@ function syncRenewals() {
 
   const emailCount = [...toRenew, ...toTerminate].filter(r => r.companyEmail).length;
   if (emailCount > 0) {
-    previewMsg += `\n\n📧 ${emailCount} confirmation email(s) will be sent.`;
+    previewMsg += `\n\n📧 ${emailCount} confirmation email(s) will be sent to customers.`;
   }
+  previewMsg += `\n📨 1 vendor notification will be sent to ${CONFIG.VENDOR_EMAIL}.`;
 
   previewMsg += '\n\nProceed?';
 
@@ -117,6 +118,9 @@ function syncRenewals() {
 
   Logger.log(`Renewals processed: ${renewalsProcessed}`);
 
+  // ── Vendor notification ────────────────────────────────────────────────────
+  sendVendorNotificationEmail(toRenew, toTerminate);
+
   // ── Summary alert ──────────────────────────────────────────────────────────
   const parts = [];
   if (renewedCompanies.length > 0) {
@@ -126,8 +130,8 @@ function syncRenewals() {
     parts.push(`Terminated: ${terminatedCompanies.length}\n${terminatedCompanies.map(n => `• ${n}`).join('\n')}`);
   }
 
-  const emailLine = emailsSent > 0 ? `\n\nEmails sent: ${emailsSent}` : '';
-  ui.alert(`✅ Sync complete\n\n${parts.join('\n\n')}${emailLine}`);
+  const emailLine = emailsSent > 0 ? `\n\nCustomer emails sent: ${emailsSent}` : '';
+  ui.alert(`✅ Sync complete\n\n${parts.join('\n\n')}${emailLine}\nVendor notification sent to ${CONFIG.VENDOR_EMAIL}`);
 }
 
 /**
