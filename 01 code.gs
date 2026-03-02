@@ -49,11 +49,8 @@ var CONFIG = {
   FIRST_MONTH_DATE: new Date('2024-02-01'),
 
   // Vendor notification (AstriCloud)
-  //VENDOR_EMAIL: 'theinosha@astricloud.com',
-  //VENDOR_CC: 'shahril@astricloud.com,mgt@astricloud.com,it@worq.space,accounts@astricloud.com,operations@worq.space,accounts@worq.space,sasikala@worq.space',
-
-  VENDOR_EMAIL: 'afdhal+5@worq.space',
-  VENDOR_CC: 'afdhal+10@worq.space',
+  VENDOR_EMAIL: 'theinosha@astricloud.com',
+  VENDOR_CC: 'shahril@astricloud.com,mgt@astricloud.com,it@worq.space,accounts@astricloud.com,operations@worq.space,accounts@worq.space,sasikala@worq.space',
 
 
 
