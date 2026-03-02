@@ -20,7 +20,7 @@ function showRestoreArchivedDialog() {
   // Build a JSON-serialisable list of archived companies (1-based index = position in data array)
   const companies = data.slice(1).map((row, i) => ({
     index: i + 1,
-    name: (row[CONFIG.TRACKER_COLS.COMPANY_NAME - 1] || '').toString(),
+    name: toProperCase((row[CONFIG.TRACKER_COLS.COMPANY_NAME - 1] || '').toString()),
     contractStart: formatDateForDialog_(row[CONFIG.TRACKER_COLS.CONTRACT_START - 1]),
     contractEnd:   formatDateForDialog_(row[CONFIG.TRACKER_COLS.CONTRACT_END   - 1])
   }));
