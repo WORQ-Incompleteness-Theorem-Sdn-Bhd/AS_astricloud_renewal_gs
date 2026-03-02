@@ -8,7 +8,8 @@ A Google Apps Script automation system that manages customer contract tracking f
 
 | Resource | Testing | Production |
 |----------|---------|------------|
-| Google Sheet | [Testing Sheet](https://docs.google.com/spreadsheets/d/1USIQXESClxQ_DHVD7qSLtAh8I1JbJUtLSg3KVDNlbn0/edit?gid=219063083#gid=219063083) | [Production Sheet](https://docs.google.com/spreadsheets/d/1t_-C-TZjd7dN6uweYG3wdZkToVAG4pxfEKInIG-TolE/edit?usp=drive_link) |
+| Google Sheet | [Testing Sheet](https://docs.google.com/spreadsheets/d/1USIQXESClxQ_DHVD7qSLtAh8I1JbJUtLSg3KVDNlbn0/edit?pli=1&gid=266634575#gid=266634575) | [Production Sheet](https://docs.google.com/spreadsheets/d/1t_-C-TZjd7dN6uweYG3wdZkToVAG4pxfEKInIG-TolE/edit?pli=1&gid=266634575#gid=266634575) |
+| Apps Script | [Testing Script](https://script.google.com/u/0/home/projects/1T-z8HKXroRAMV8a9WBF0NdlQG38FrjHxPmLlJ5cXblBuioVFHwlObFlK) | [Production Script](https://script.google.com/u/0/home/projects/1RCLJ-hDSe_9ESl4LpHEfaYhaM5BhD8MpOEJ0XgLYDIx9ZSVxO9n_EQvH/) |
 | Google Form | [Testing Form](https://docs.google.com/forms/d/1rC0suleIU9AqaQWaM3uPkZs7KlLo1O9wWugOgYYrYvc/edit) | [Production Form](https://docs.google.com/forms/d/1UAEJlLobYMUNB5JJFadbjHIEs1TmA90k6-1plIgERhs/preview) |
 
 ---
@@ -78,6 +79,10 @@ The main entry point. Contains the global `CONFIG` object (declared with `var` f
 | CONTRACT_START | G (7) | Contract start date |
 | CONTRACT_END | H (8) | Contract end date |
 | FIRST_MONTH | I (9) | First month column (Feb-2024) |
+
+**CONFIG.VENDOR_EMAIL:** Main recipient for vendor notification emails (AstriCloud).
+
+**CONFIG.VENDOR_CC:** Comma-separated CC list for vendor notification emails (AstriCloud team + WORQ internal recipients).
 
 **CONFIG.REMINDER_MONTHS:** `[3, 2, 1, 0]` — sends reminders at 3, 2, 1 months before expiry, and again in the expiry month itself.
 
@@ -150,9 +155,11 @@ Sends automated renewal reminder emails at 3, 2, 1 month(s) and 0 months (expiry
 | `checkAndSendReminders()` | Scheduled / Manual | Iterates TRACKER rows, checks months until expiry, sends reminder emails at configured thresholds |
 | `setupRenewalStatusDropdown()` | Manual | Applies dropdown validation (`Pending`, `Renew`, `Renewed`, `Not Renewing`) to all rows in TRACKER col F |
 | `getMonthsDifference(date1, date2)` | Internal | Calculates the whole-month difference between two dates |
-| `sendRenewalReminderEmail(companyName, email, pilotNumber, expiryDate, monthsLeft, worqLocation)` | Internal | Sends the renewal reminder email via `MailApp.sendEmail()`. CC's the location inbox and sets Reply-To to `it@worq.space`. |
-| `sendRenewalConfirmationEmail(companyName, email, pilotNumber, newStartDate, newEndDate, worqLocation)` | Internal | Sends a thank-you confirmation email when a customer renews, including their new effective tenure. CC's the location inbox. |
-| `sendTerminationEmail(companyName, email, pilotNumber, endDate, worqLocation)` | Internal | Sends a termination confirmation email when a customer chooses Not Renewing. CC's the location inbox. |
+| `sendRenewalReminderEmail(companyName, email, pilotNumber, expiryDate, monthsLeft, worqLocation)` | Internal | Sends the renewal reminder email via `MailApp.sendEmail()`. CC's the location inbox and sets Reply-To to `it@worq.space`. Company name is normalised to Proper Case before use. |
+| `sendRenewalConfirmationEmail(companyName, email, pilotNumber, newStartDate, newEndDate, worqLocation)` | Internal | Sends a thank-you confirmation email when a customer renews, including their new effective tenure. CC's the location inbox. Company name is normalised to Proper Case. |
+| `sendTerminationEmail(companyName, email, pilotNumber, endDate, worqLocation)` | Internal | Sends a termination confirmation email when a customer chooses Not Renewing. CC's the location inbox. Company name is normalised to Proper Case. |
+| `sendVendorNotificationEmail(renewals, terminations)` | Internal | Sends a **single batched HTML table email** to the AstriCloud vendor (Theinosha) listing all renewals and terminations processed in the sync run. Terminations appear first (red), renewals second (green). Subject is `Astricloud Landline Subscription Update - {Month Year}`. Recipients are configured in `CONFIG.VENDOR_EMAIL` and `CONFIG.VENDOR_CC`. |
+| `toProperCase(str)` | Internal | Converts a company name string to Title Case (e.g. `"INCOMPLETENESS THEOREM SDN BHD"` → `"Incompleteness Theorem Sdn Bhd"`). Applied in all customer-facing and vendor email functions, and in the Restore Archived dialog. |
 | `formatPilotNumber(pilotNumber)` | Internal | Restores the leading zero on pilot numbers that Google Sheets strips when stored as a numeric value (e.g. `327746340` → `0327746340`). |
 | `getLocationEmail(worqLocation)` | Internal | Looks up the location-specific email from the **Addresses** sheet by matching col A (Site) to the customer's WORQ Location. Returns the email in col C, or `null` if no match found. |
 
