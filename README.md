@@ -46,9 +46,15 @@ RestoreArchivedDialog.html  — HTML modal UI for the restore dialog
 3. Authenticate: `clasp login`
 4. Push changes: `clasp push`
 
-In the Apps Script Triggers UI, create the following installable triggers:
-- **On edit** → `onPilotNumberEdit` — auto-populates contract dates when a pilot number is entered
-- **On form submit** → `onFormSubmit` — highlights new submissions, detects duplicates, sends vendor email (run `setupFormSubmitTrigger()` from the Apps Script editor to install this)
+Install the following triggers. Most have a setup function — run it from the Apps Script editor (select the function, click **Run**) rather than wiring it by hand:
+
+- **Time-based** → `monthlyRenewalReminders` — sends escalating renewal reminders on the 1st of every month. Run `setupAutoReminderTrigger()`.
+- **On form submit** → `onFormSubmit` — highlights new submissions, detects duplicates, sends vendor email. Run `setupFormSubmitTrigger()`.
+- **On edit** → `onPilotNumberEdit` — auto-populates contract dates when a pilot number is entered. Create manually in the Apps Script Triggers UI (use this non-reserved name, not `onEdit`, to prevent double-firing).
+
+Then run `checkTriggerHealth()` to confirm the automation is live — and re-run it occasionally, since a silently dropped trigger stops reminders or vendor emails with no other warning.
+
+First-time setup also needs: `setupConfigSheet()` (vendor email recipients), `setupRenewalStatusDropdown()` (col F dropdown), and `setupUrgencyFormatting()` (Contract End Date colors).
 
 ## Documentation
 

@@ -1,0 +1,8 @@
+# Claude Code local settings (machine-specific)
+.claude/
+
+# clasp credentials
+.clasprc.json
+
+# clasp pull artifacts — always edit the .gs files, never the .js duplicates
+*.js

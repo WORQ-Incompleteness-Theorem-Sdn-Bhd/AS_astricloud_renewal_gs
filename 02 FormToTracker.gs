@@ -407,17 +407,3 @@ function backfillMissingPaidStatus() {
   Logger.log(`Backfill complete: ${filledCount} filled, ${skippedCount} skipped (existing data preserved)`);
   SpreadsheetApp.getUi().alert(`✅ Backfill complete\n\n${filledCount} rows populated\n${skippedCount} rows skipped (existing data preserved)`);
 }
-
-/**
- * DEBUG HELPER: Logs the type and value of month column headers starting from FIRST_MONTH.
- * Run this once to confirm what format the headers are stored in.
- */
-function debugHeaders() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(CONFIG.TRACKER_SHEET);
-  const headers = sheet.getRange(2, 1, 1, sheet.getLastColumn()).getValues()[0];
-  for (let i = CONFIG.TRACKER_COLS.FIRST_MONTH - 1; i < Math.min(headers.length, CONFIG.TRACKER_COLS.FIRST_MONTH + 5); i++) {
-    const h = headers[i];
-    Logger.log(`Col ${i+1}: type=${typeof h}, value=${h}, isDate=${h instanceof Date}, formatted=${h instanceof Date ? Utilities.formatDate(h, Session.getScriptTimeZone(), 'MMM-yyyy') : 'N/A'}`);
-  }
-}

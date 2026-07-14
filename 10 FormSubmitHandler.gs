@@ -10,6 +10,17 @@
  *     - New       → send vendor notification to AstriCloud
  */
 function onFormSubmit(e) {
+  // Thin wrapper: run the handler under error alerting so a failed submission
+  // (which happens unattended) surfaces instead of failing silently.
+  try {
+    handleFormSubmit_(e);
+  } catch (err) {
+    notifyError_('onFormSubmit', err);
+    throw err; // still surface in the Apps Script execution log
+  }
+}
+
+function handleFormSubmit_(e) {
   if (!e || !e.range) {
     Logger.log('onFormSubmit: no event object — must be run via trigger, not manually');
     return;
@@ -151,21 +162,23 @@ function sendNewSignupVendorEmail(companyName, email, worqLocation, timestamp) {
   </tr>
 </table>
 <br>
+<p>You may view the full signup list in the tracker: <a href="https://docs.google.com/spreadsheets/d/1t_-C-TZjd7dN6uweYG3wdZkToVAG4pxfEKInIG-TolE/edit?gid=219063083#gid=219063083">Form Responses 1 – AstriCloud Tracker</a></p>
 <p>Please assist to provision a virtual landline pilot number for this company.</p>
 <p>
   <strong>Best regards,</strong><br>
   <strong>WORQ Operations Team</strong>
 </p>`;
 
-  // Build CC: VENDOR_CC + outlet email (if found)
+  // Build CC: VENDOR_CC (from Config sheet, fallback to CONFIG) + outlet email (if found)
+  const vendorCc = getVendorCc();
   const locationEmail = getLocationEmail(worqLocation);
   const cc = locationEmail
-    ? CONFIG.VENDOR_CC + ',' + locationEmail
-    : CONFIG.VENDOR_CC;
+    ? vendorCc + ',' + locationEmail
+    : vendorCc;
 
   try {
     MailApp.sendEmail({
-      to:       CONFIG.VENDOR_EMAIL,
+      to:       getVendorEmail(),
       cc:       cc,
       subject:  subject,
       htmlBody: htmlBody,
