@@ -262,10 +262,20 @@ This single rule gives three important properties:
 
 **Skip logic in `runRenewalReminders()`:**
 - Skips rows with no contract end date or no email
-- Skips rows already decided — col F is `Renew`, `Renewed`, `Not Renewing`, or `Terminated`
+- Skips rows already decided — col F is `Renew`, `Renewed`, `Not Renewing`, or `Terminated` (except the `Renewed` clearing case below)
 - Skips rows outside the 3/2/1/0-month window (including contracts already past — negative months have no target stage)
 - Skips rows whose current stage already ≥ the target stage
 - After sending, sets col F to the target stage with dropdown validation
+
+**Auto-clearing the `Renewed` status:**
+
+Each monthly run blanks the status of any `Renewed` row whose contract is **more than 3 months** from expiry, returning the row to a clean white state. It starts a fresh reminder cycle naturally once it comes back within 3 months.
+
+> **The >3-month guard is load-bearing.** `Renewed` is what suppresses reminders — an empty status has stage rank `-1`, so *any* target stage outranks it and sends immediately. Clearing a row still inside the reminder window would instantly re-remind a customer who had just renewed (e.g. a short or backdated renewal). The guard keeps `Renewed` in place until the contract is safely out of range.
+
+Only `Renewed` is cleared. `Not Renewing` and `Terminated` are kept — they mark customers awaiting `[04] Sync` / `[05] Archive`, and clearing them would erase a recorded decision and make the rows look unhandled.
+
+Cleared rows are reported in the run summary email and the UI alert.
 
 > **No auto-termination.** After the final notice (0 months), a non-responding customer stays at `Last Reminder Sent` — the system never auto-sends a termination email or auto-sets `Not Renewing`. Handling stragglers is a deliberate manual step.
 
@@ -530,7 +540,7 @@ Google Form
 | `3rd Reminder Sent` | Monthly reminder job | Reminder sent at 1 month to expiry — awaiting customer reply |
 | `Last Reminder Sent` | Monthly reminder job | Final notice sent in the expiry month — awaiting customer reply |
 | `Renew` | Admin (manual) | Customer confirmed renewal |
-| `Renewed` | `syncRenewals()` | Contract extended, months populated |
+| `Renewed` | `syncRenewals()` | Contract extended, months populated. Auto-cleared to blank by the monthly job once the contract is > 3 months from expiry. |
 | `Not Renewing` | Admin (manual) | Customer confirmed termination |
 | `Terminated` | `syncRenewals()` | Termination processed, ready to archive |
 

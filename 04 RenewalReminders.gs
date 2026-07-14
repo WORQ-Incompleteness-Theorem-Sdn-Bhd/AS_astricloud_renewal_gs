@@ -25,11 +25,16 @@ function monthlyRenewalReminders() {
 /**
  * Core reminder engine (no UI, no email-summary side effects — returns a result
  * object). Escalates each awaiting-reply company through the reminder stages as
- * expiry approaches: 3 months → 1st, 2 → 2nd, 1 → Last. A stage is applied at
- * most once and status is never downgraded, so re-running within the same month
- * is a safe no-op. Admin-set 'Renew' / 'Renewed' / 'Not Renewing' are left alone.
+ * expiry approaches: 3 months → 1st, 2 → 2nd, 1 → 3rd, 0 → Last. A stage is
+ * applied at most once and status is never downgraded, so re-running within the
+ * same month is a safe no-op. Admin-set 'Renew' / 'Not Renewing' are left alone.
  *
- * @returns {{sent:Array, skipped:number, remindersSent:number, uiMessage:string}}
+ * Also clears the 'Renewed' status once the renewed contract is safely outside
+ * the reminder window (> 3 months to expiry), returning the row to a blank
+ * state so it reads as "nothing to do" until its next cycle begins.
+ *
+ * @returns {{sent:Array, skipped:number, remindersSent:number, cleared:Array,
+ *            uiMessage:string}}
  */
 function runRenewalReminders() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -43,13 +48,18 @@ function runRenewalReminders() {
   const data = trackerSheet.getDataRange().getValues();
   const now = new Date();
   const reminderDetails = [];
+  const clearedDetails = [];
   let skippedHandled = 0;
   let skippedSameStage = 0;
 
-  Logger.log(`--- runRenewalReminders started | Today: ${now.toDateString()} | Stages: 3→1st, 2→2nd, 1→Last ---`);
+  Logger.log(`--- runRenewalReminders started | Today: ${now.toDateString()} | Stages: 3→1st, 2→2nd, 1→3rd, 0→Last ---`);
 
   // Statuses that mean the company is already decided — never remind these
   const DONE = new Set(['Renew', 'Renewed', 'Not Renewing', 'Terminated']);
+
+  // Furthest-out reminder threshold (3). A renewed contract beyond this is
+  // safely outside the reminder window, so its 'Renewed' flag can be cleared.
+  const MAX_REMINDER_MONTH = Math.max.apply(null, CONFIG.REMINDER_MONTHS);
 
   const dropdownRule = SpreadsheetApp.newDataValidation()
     .requireValueInList(CONFIG.RENEWAL_STATUS_VALUES, true)
@@ -69,15 +79,33 @@ function runRenewalReminders() {
       continue;
     }
 
-    // Already decided — leave alone
+    const endDate = new Date(contractEnd);
+    const monthsUntilExpiry = getMonthsDifference(now, endDate);
+
+    // Already decided — leave alone, except for 'Renewed' rows that have moved
+    // safely past the reminder window (below).
     if (DONE.has(renewalStatus)) {
+      // A renewed contract keeps its 'Renewed' flag only until it is clear of
+      // the reminder window. Once it is (> 3 months out), blank the status so
+      // the row reads as "nothing to do" and will start a fresh reminder cycle
+      // naturally when it comes back within 3 months.
+      //
+      // The guard matters: 'Renewed' is what suppresses reminders, so clearing
+      // it inside the window would immediately re-remind a customer who just
+      // renewed (e.g. a short or backdated renewal).
+      if (renewalStatus === 'Renewed' && monthsUntilExpiry > MAX_REMINDER_MONTH) {
+        const statusCell = trackerSheet.getRange(i + 1, CONFIG.TRACKER_COLS.RENEWAL_STATUS);
+        statusCell.clearContent();
+        statusCell.setDataValidation(dropdownRule);
+        clearedDetails.push({ name: companyName, monthsLeft: monthsUntilExpiry });
+        Logger.log(`Row ${i + 1} CLEARED — ${companyName} | Renewed, ${monthsUntilExpiry} months out (> ${MAX_REMINDER_MONTH})`);
+        continue;
+      }
+
       Logger.log(`Row ${i + 1} SKIPPED — ${companyName} | Already handled (${renewalStatus})`);
       skippedHandled++;
       continue;
     }
-
-    const endDate = new Date(contractEnd);
-    const monthsUntilExpiry = getMonthsDifference(now, endDate);
 
     // Determine the target stage for this month's months-left value
     const targetStage = CONFIG.REMINDER_STAGES[monthsUntilExpiry]; // undefined if not 3/2/1/0
@@ -112,10 +140,15 @@ function runRenewalReminders() {
   }
 
   const remindersSent = reminderDetails.length;
-  Logger.log(`Renewal reminders sent: ${remindersSent}`);
+  Logger.log(`Renewal reminders sent: ${remindersSent} | Renewed statuses cleared: ${clearedDetails.length}`);
 
   const skipNote = (skippedHandled > 0 || skippedSameStage > 0)
     ? `\n\nSkipped: ${skippedHandled} already decided, ${skippedSameStage} already at this stage`
+    : '';
+
+  const clearedNote = clearedDetails.length > 0
+    ? `\n\nCleared ${clearedDetails.length} "Renewed" status(es) — now > ${MAX_REMINDER_MONTH} months out:\n` +
+      clearedDetails.map(d => `• ${d.name} (${d.monthsLeft} months left)`).join('\n')
     : '';
 
   let uiMessage;
@@ -123,13 +156,14 @@ function runRenewalReminders() {
     const list = reminderDetails
       .map(d => `• ${d.name} — ${d.stage} (${d.monthsLeft} month${d.monthsLeft === 1 ? '' : 's'} left)`)
       .join('\n');
-    uiMessage = `✅ ${remindersSent} renewal reminder${remindersSent === 1 ? '' : 's'} sent\n\n${list}${skipNote}`;
+    uiMessage = `✅ ${remindersSent} renewal reminder${remindersSent === 1 ? '' : 's'} sent\n\n${list}${clearedNote}${skipNote}`;
   } else {
-    uiMessage = `ℹ️ No renewal reminders sent.\n\nNo awaiting-reply contracts hit a 3/2/1-month threshold this run.${skipNote}`;
+    uiMessage = `ℹ️ No renewal reminders sent.\n\nNo awaiting-reply contracts hit a 3/2/1/0-month threshold this run.${clearedNote}${skipNote}`;
   }
 
   return {
     sent: reminderDetails,
+    cleared: clearedDetails,
     skipped: skippedHandled + skippedSameStage,
     remindersSent: remindersSent,
     uiMessage: uiMessage
@@ -190,10 +224,20 @@ function sendReminderRunSummary_(summary) {
 </div>`;
   }
 
+  // Renewed statuses cleared this run (contract now safely outside the window)
+  const cleared = summary.cleared || [];
+  const clearedSection = cleared.length > 0
+    ? `<p style="margin-top:16px;"><strong>${cleared.length}</strong> "Renewed" status(es) cleared — these contracts are now more than 3 months from expiry and will start a fresh reminder cycle when they come back in range:</p>
+<ul style="font-family:Arial,sans-serif;font-size:13px;margin-top:4px;">
+  ${cleared.map(d => `<li>${toProperCase(d.name)} — ${d.monthsLeft} months left</li>`).join('')}
+</ul>`
+    : '';
+
   const htmlBody = `
 ${lapsedSection}
 <p>Monthly renewal reminder run completed for <strong>${monthYear}</strong>.</p>
 <p><strong>${summary.remindersSent}</strong> reminder(s) sent, ${summary.skipped} row(s) skipped.</p>
+${clearedSection}
 <table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;">
   <tr style="background:#f2f2f2;">
     <th style="padding:6px 10px;border:1px solid #ccc;text-align:left;">Company</th>
