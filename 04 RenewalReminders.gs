@@ -143,7 +143,14 @@ function runRenewalReminders() {
 function sendReminderRunSummary_(summary) {
   const tz = Session.getScriptTimeZone();
   const monthYear = Utilities.formatDate(new Date(), tz, 'MMMM yyyy');
-  const subject = `Renewal Reminder Run — ${monthYear} (${summary.remindersSent} sent)`;
+  // Lapsed = contract end date passed with no renewal decision. These need a
+  // human: the reminder ladder stops at the final notice and never
+  // auto-terminates, so a non-responding customer sits here until acted on.
+  const lapsed = getLapsedContracts_();
+
+  const subject = lapsed.length > 0
+    ? `⚠️ Renewal Reminder Run — ${monthYear} (${summary.remindersSent} sent, ${lapsed.length} lapsed need action)`
+    : `Renewal Reminder Run — ${monthYear} (${summary.remindersSent} sent)`;
 
   const rows = summary.sent.length
     ? summary.sent.map(d =>
@@ -153,7 +160,38 @@ function sendReminderRunSummary_(summary) {
       ).join('')
     : `<tr><td colspan="3" style="padding:4px 10px;border:1px solid #ccc;">No reminders sent this run.</td></tr>`;
 
+  // Lapsed block goes FIRST — it's the only part of this email that needs action.
+  let lapsedSection = '';
+  if (lapsed.length > 0) {
+    const lapsedRows = lapsed.map(c => {
+      const endStr = Utilities.formatDate(c.endDate, tz, 'dd MMM yyyy');
+      return `<tr>` +
+        `<td style="padding:4px 10px;border:1px solid #ccc;">${toProperCase(c.companyName)}</td>` +
+        `<td style="padding:4px 10px;border:1px solid #ccc;">${c.renewalStatus || '(no status)'}</td>` +
+        `<td style="padding:4px 10px;border:1px solid #ccc;text-align:center;">${endStr}</td>` +
+        `<td style="padding:4px 10px;border:1px solid #ccc;text-align:center;color:#cc0000;font-weight:bold;">${c.daysLapsed}d</td>` +
+        `</tr>`;
+    }).join('');
+
+    lapsedSection = `
+<div style="border-left:4px solid #cc0000;padding:8px 14px;background:#fdf2f2;margin-bottom:18px;">
+  <p style="margin:0 0 8px 0;"><strong>⚠️ ${lapsed.length} lapsed contract${lapsed.length === 1 ? '' : 's'} need${lapsed.length === 1 ? 's' : ''} a decision</strong></p>
+  <p style="margin:0 0 10px 0;">These contracts have passed their end date with no renewal decision recorded. They will not receive further automated reminders.</p>
+  <table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;">
+    <tr style="background:#f2f2f2;">
+      <th style="padding:6px 10px;border:1px solid #ccc;text-align:left;">Company</th>
+      <th style="padding:6px 10px;border:1px solid #ccc;text-align:left;">Last Status</th>
+      <th style="padding:6px 10px;border:1px solid #ccc;">Ended</th>
+      <th style="padding:6px 10px;border:1px solid #ccc;">Lapsed</th>
+    </tr>
+    ${lapsedRows}
+  </table>
+  <p style="margin:10px 0 0 0;"><strong>Next step:</strong> set Renewal Status (col F) to "Renew" or "Not Renewing", then run [04] Sync Renewals.</p>
+</div>`;
+  }
+
   const htmlBody = `
+${lapsedSection}
 <p>Monthly renewal reminder run completed for <strong>${monthYear}</strong>.</p>
 <p><strong>${summary.remindersSent}</strong> reminder(s) sent, ${summary.skipped} row(s) skipped.</p>
 <table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px;">

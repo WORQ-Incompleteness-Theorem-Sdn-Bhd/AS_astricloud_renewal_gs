@@ -235,7 +235,7 @@ Sends automated renewal reminder emails at 3, 2, 1 and 0 months (expiry month) b
 | `checkAndSendReminders()` | Manual / Menu | Menu entry point — runs the engine and shows a UI alert with the run summary |
 | `monthlyRenewalReminders()` | **Scheduled trigger** | Automated entry point (1st of each month). Runs the engine under error alerting and emails a run summary. Installed via `setupAutoReminderTrigger()`. |
 | `runRenewalReminders()` | Internal | The core engine — no UI, no side effects beyond sending. Returns a result object. Shared by both entry points above. |
-| `sendReminderRunSummary_(summary)` | Internal | Emails a table of who was reminded to `CONFIG.REMINDER_SUMMARY_EMAIL`, so unattended runs leave a visible trace |
+| `sendReminderRunSummary_(summary)` | Internal | Emails a table of who was reminded to `CONFIG.REMINDER_SUMMARY_EMAIL`, so unattended runs leave a visible trace. Also surfaces **lapsed contracts** (see below). |
 | `migrateReminderStages()` | Editor | **One-time migration.** Realigns col F reminder stages to each row's current months-to-expiry, **without sending any email**. Shows a preview and asks for confirmation before writing. Only touches rows that are blank, legacy `Pending`, or already at a reminder stage — never `Renew`/`Renewed`/`Not Renewing`/`Terminated`. |
 | `setupRenewalStatusDropdown()` | Editor | Applies dropdown validation (`CONFIG.RENEWAL_STATUS_VALUES`) to all rows in TRACKER col F |
 | `getMonthsDifference(date1, date2)` | Internal | Calculates the whole-month difference between two dates |
@@ -267,7 +267,14 @@ This single rule gives three important properties:
 - Skips rows whose current stage already ≥ the target stage
 - After sending, sets col F to the target stage with dropdown validation
 
-> **No auto-termination.** After the final notice (0 months), a non-responding customer stays at `Last Reminder Sent` — the system never auto-sends a termination email or auto-sets `Not Renewing`. Handling stragglers is a deliberate manual step; **Find Lapsed Contracts** surfaces them.
+> **No auto-termination.** After the final notice (0 months), a non-responding customer stays at `Last Reminder Sent` — the system never auto-sends a termination email or auto-sets `Not Renewing`. Handling stragglers is a deliberate manual step.
+
+**What happens after the final notice:** once the end date passes, months-to-expiry goes negative, no target stage exists, and the row is skipped by every subsequent run — no further emails, no status change. The company becomes a **lapsed contract** and is surfaced two ways:
+
+1. **Automatically** — the monthly run summary email leads with a red "⚠️ N lapsed contracts need a decision" block, and the count appears in the subject line. This is the push mechanism; it needs no one to remember anything.
+2. **On demand** — the **Find Lapsed Contracts** menu item.
+
+Both use the same detection helper (`getLapsedContracts_()` in `09 HealthCheck.gs`), so they can never disagree.
 
 **Email Details:**
 - Format: HTML (`htmlBody`) — text wraps naturally at the reader's window width
@@ -369,6 +376,20 @@ HTML modal rendered by `showRestoreArchivedDialog()` via `HtmlService.createTemp
 - **Restore Selected** button (disabled until at least one company is checked)
 - Calls `google.script.run.restoreArchivedCompanies(indices)` on submit
 - Uses `<?!= companies ?>` (unescaped scriptlet) to inject the JSON array — required to prevent HtmlService from HTML-encoding the double quotes
+
+---
+
+### 09 HealthCheck.gs — Lapsed Contract Detection
+Finds customers whose contract ended with no renewal decision recorded — the end of the line for the reminder ladder, since it never auto-terminates.
+
+| Function | Type | Description |
+|----------|------|-------------|
+| `getLapsedContracts_()` | Internal | Shared detection. Returns structured data for every TRACKER row whose Contract End Date has passed and whose col F is **not** `Renewed` / `Terminated` / `Not Renewing`. Sorted longest-lapsed first. |
+| `findLapsedContracts()` | Manual / Menu | Shows the lapsed list in a UI alert (truncated to 20 entries) |
+
+A row lapses when its end date passes without an admin decision — typically sitting at `Last Reminder Sent` after the customer ignored all four reminders, but also any row left blank or mid-ladder.
+
+`getLapsedContracts_()` is the single source of truth, used by both `findLapsedContracts()` (on demand) and `sendReminderRunSummary_()` (the monthly push). Changing the lapse rule in one place changes it everywhere.
 
 ---
 
