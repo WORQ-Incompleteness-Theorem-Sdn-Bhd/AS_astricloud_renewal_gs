@@ -30,8 +30,9 @@ var CONFIG = {
     EMAIL: 2,           // B
     COMPANY_NAME: 3,    // C
     REG_NUMBER: 4,      // D (ignore)
-    WORQ_LOCATION: 5    // E
-    // F-X: ignore
+    WORQ_LOCATION: 5,   // E
+    COMPANY_EMAIL: 8    // H (dedupe key — one submitter may register many companies)
+    // F, G, I-X: ignore
   },
 
   // Renewal Status columns
@@ -137,6 +138,7 @@ function onOpen() {
   //   setupUrgencyFormatting()      — (re)build urgency colors on Contract End Date
   //   setupRenewalStatusDropdown()  — apply the col F dropdown to all rows
   //   migrateReminderStages()       — realign reminder stages, sends no emails
+  //   fixTrackerEmailsFromForm()    — one-time: TRACKER col D ← form company email (col H)
   //   removeAutoReminderTrigger()   — uninstall the monthly reminder trigger
   //   removeFormSubmitTrigger()     — uninstall the form submit trigger
   //   removeArchivedDuplicatesFromTracker()
@@ -243,6 +245,7 @@ function checkTriggerHealth() {
 
   const hasReminder = handlers.includes(MONTHLY_REMINDER_HANDLER);
   const hasFormSubmit = handlers.includes('onFormSubmit');
+  const hasPilotEdit = handlers.includes('onPilotNumberEdit');
 
   const lines = triggers.length
     ? triggers.map(t => `• ${t.getHandlerFunction()} (${t.getEventType()})`).join('\n')
@@ -250,10 +253,13 @@ function checkTriggerHealth() {
 
   const warnings = [];
   if (!hasReminder) {
-    warnings.push(`❌ Monthly reminder trigger (${MONTHLY_REMINDER_HANDLER}) is NOT installed — renewal reminders will not run. Fix: menu → "Setup Monthly Auto-Reminder Trigger".`);
+    warnings.push(`❌ Monthly reminder trigger (${MONTHLY_REMINDER_HANDLER}) is NOT installed — renewal reminders will not run. Fix: run setupAutoReminderTrigger() from the Apps Script editor.`);
   }
   if (!hasFormSubmit) {
     warnings.push(`❌ Form-submit trigger (onFormSubmit) is NOT installed — new signups won't notify the vendor. Fix: run setupFormSubmitTrigger() from the Apps Script editor.`);
+  }
+  if (!hasPilotEdit) {
+    warnings.push(`❌ On-edit trigger (onPilotNumberEdit) is NOT installed — entering a pilot number won't fill contract dates or monthly "paid". Fix: Apps Script → Triggers → Add trigger → onPilotNumberEdit, From spreadsheet, On edit.`);
   }
 
   const status = warnings.length === 0

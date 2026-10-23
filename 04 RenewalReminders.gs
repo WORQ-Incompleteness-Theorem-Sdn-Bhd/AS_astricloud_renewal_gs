@@ -49,6 +49,7 @@ function runRenewalReminders() {
   const now = new Date();
   const reminderDetails = [];
   const clearedDetails = [];
+  const failedDetails = [];
   let skippedHandled = 0;
   let skippedSameStage = 0;
 
@@ -130,7 +131,13 @@ function runRenewalReminders() {
       continue;
     }
 
-    sendRenewalReminderEmail(companyName, companyEmail, pilotNumber, endDate, monthsUntilExpiry, worqLocation);
+    const sent = sendRenewalReminderEmail(companyName, companyEmail, pilotNumber, endDate, monthsUntilExpiry, worqLocation);
+
+    // Leave the stage unchanged on failure so the next run retries it.
+    if (!sent) {
+      failedDetails.push({ name: companyName, email: companyEmail, stage: targetStage });
+      continue;
+    }
 
     const statusCell = trackerSheet.getRange(i + 1, CONFIG.TRACKER_COLS.RENEWAL_STATUS);
     statusCell.setValue(targetStage);
@@ -140,7 +147,12 @@ function runRenewalReminders() {
   }
 
   const remindersSent = reminderDetails.length;
-  Logger.log(`Renewal reminders sent: ${remindersSent} | Renewed statuses cleared: ${clearedDetails.length}`);
+  Logger.log(`Renewal reminders sent: ${remindersSent} | Failed: ${failedDetails.length} | Renewed statuses cleared: ${clearedDetails.length}`);
+
+  const failedNote = failedDetails.length > 0
+    ? `\n\n❌ ${failedDetails.length} reminder(s) FAILED to send — status left unchanged, will retry next run:\n` +
+      failedDetails.map(d => `• ${d.name} (${d.email}) — ${d.stage}`).join('\n')
+    : '';
 
   const skipNote = (skippedHandled > 0 || skippedSameStage > 0)
     ? `\n\nSkipped: ${skippedHandled} already decided, ${skippedSameStage} already at this stage`
@@ -156,13 +168,14 @@ function runRenewalReminders() {
     const list = reminderDetails
       .map(d => `• ${d.name} — ${d.stage} (${d.monthsLeft} month${d.monthsLeft === 1 ? '' : 's'} left)`)
       .join('\n');
-    uiMessage = `✅ ${remindersSent} renewal reminder${remindersSent === 1 ? '' : 's'} sent\n\n${list}${clearedNote}${skipNote}`;
+    uiMessage = `✅ ${remindersSent} renewal reminder${remindersSent === 1 ? '' : 's'} sent\n\n${list}${failedNote}${clearedNote}${skipNote}`;
   } else {
-    uiMessage = `ℹ️ No renewal reminders sent.\n\nNo awaiting-reply contracts hit a 3/2/1/0-month threshold this run.${clearedNote}${skipNote}`;
+    uiMessage = `ℹ️ No renewal reminders sent.\n\nNo awaiting-reply contracts hit a 3/2/1/0-month threshold this run.${failedNote}${clearedNote}${skipNote}`;
   }
 
   return {
     sent: reminderDetails,
+    failed: failedDetails,
     cleared: clearedDetails,
     skipped: skippedHandled + skippedSameStage,
     remindersSent: remindersSent,
@@ -182,9 +195,26 @@ function sendReminderRunSummary_(summary) {
   // auto-terminates, so a non-responding customer sits here until acted on.
   const lapsed = getLapsedContracts_();
 
-  const subject = lapsed.length > 0
-    ? `⚠️ Renewal Reminder Run — ${monthYear} (${summary.remindersSent} sent, ${lapsed.length} lapsed need action)`
+  const failed = summary.failed || [];
+
+  const needsAction = [];
+  if (failed.length > 0) needsAction.push(`${failed.length} failed`);
+  if (lapsed.length > 0) needsAction.push(`${lapsed.length} lapsed need action`);
+
+  const subject = needsAction.length > 0
+    ? `⚠️ Renewal Reminder Run — ${monthYear} (${summary.remindersSent} sent, ${needsAction.join(', ')})`
     : `Renewal Reminder Run — ${monthYear} (${summary.remindersSent} sent)`;
+
+  // Failed sends go at the very top — status was left unchanged, so they retry
+  // next run, but a bad address will keep failing until someone fixes col D.
+  const failedSection = failed.length > 0 ? `
+<div style="border-left:4px solid #cc0000;padding:8px 14px;background:#fdf2f2;margin-bottom:18px;">
+  <p style="margin:0 0 8px 0;"><strong>❌ ${failed.length} reminder${failed.length === 1 ? '' : 's'} failed to send</strong></p>
+  <p style="margin:0 0 8px 0;">Renewal Status was left unchanged, so these will be retried next run. Check the Company Email (col D) for each:</p>
+  <ul style="font-family:Arial,sans-serif;font-size:13px;margin:0;">
+    ${failed.map(d => `<li>${toProperCase(d.name)} — ${d.email} (${d.stage})</li>`).join('')}
+  </ul>
+</div>` : '';
 
   const rows = summary.sent.length
     ? summary.sent.map(d =>
@@ -234,6 +264,7 @@ function sendReminderRunSummary_(summary) {
     : '';
 
   const htmlBody = `
+${failedSection}
 ${lapsedSection}
 <p>Monthly renewal reminder run completed for <strong>${monthYear}</strong>.</p>
 <p><strong>${summary.remindersSent}</strong> reminder(s) sent, ${summary.skipped} row(s) skipped.</p>
@@ -370,6 +401,7 @@ function getMonthsDifference(date1, date2) {
 
 /**
  * Send renewal reminder email
+ * @returns {boolean} true if sent
  */
 function sendRenewalReminderEmail(companyName, email, pilotNumber, expiryDate, monthsLeft, worqLocation) {
   companyName = toProperCase(companyName);
@@ -414,6 +446,16 @@ function sendRenewalReminderEmail(companyName, email, pilotNumber, expiryDate, m
 </p>
 `;
 
+  return sendCustomerEmail_(email, subject, htmlBody, worqLocation, `Reminder to ${companyName}`);
+}
+
+/**
+ * Send one customer-facing email, CC'ing the outlet (Addresses sheet) if found.
+ * Never throws — returns true on success, false on failure, so callers can
+ * avoid recording an email as sent when it wasn't.
+ * @returns {boolean}
+ */
+function sendCustomerEmail_(email, subject, htmlBody, worqLocation, label) {
   const locationEmail = getLocationEmail(worqLocation);
 
   try {
@@ -421,9 +463,11 @@ function sendRenewalReminderEmail(companyName, email, pilotNumber, expiryDate, m
     if (locationEmail) options.cc = locationEmail;
     MailApp.sendEmail(options);
 
-    Logger.log(`Reminder sent to ${companyName} (${email})${locationEmail ? ` | CC: ${locationEmail}` : ''}`);
+    Logger.log(`${label} sent (${email})${locationEmail ? ` | CC: ${locationEmail}` : ''}`);
+    return true;
   } catch (e) {
-    Logger.log(`ERROR sending email to ${email}: ${e.message}`);
+    Logger.log(`ERROR — ${label} FAILED (${email}): ${e.message}`);
+    return false;
   }
 }
 
@@ -455,17 +499,7 @@ function sendRenewalConfirmationEmail(companyName, email, pilotNumber, newStartD
 </p>
 `;
 
-  const locationEmail = getLocationEmail(worqLocation);
-
-  try {
-    const options = { to: email, subject: subject, htmlBody: htmlBody, name: 'WORQ Operations Team', replyTo: 'it@worq.space' };
-    if (locationEmail) options.cc = locationEmail;
-    MailApp.sendEmail(options);
-
-    Logger.log(`Renewal confirmation sent to ${companyName} (${email})${locationEmail ? ` | CC: ${locationEmail}` : ''}`);
-  } catch (e) {
-    Logger.log(`ERROR sending confirmation to ${email}: ${e.message}`);
-  }
+  return sendCustomerEmail_(email, subject, htmlBody, worqLocation, `Renewal confirmation to ${companyName}`);
 }
 
 /**
@@ -495,17 +529,7 @@ function sendTerminationEmail(companyName, email, pilotNumber, contractEndDate, 
 </p>
 `;
 
-  const locationEmail = getLocationEmail(worqLocation);
-
-  try {
-    const options = { to: email, subject: subject, htmlBody: htmlBody, name: 'WORQ Operations Team', replyTo: 'it@worq.space' };
-    if (locationEmail) options.cc = locationEmail;
-    MailApp.sendEmail(options);
-
-    Logger.log(`Termination confirmation sent to ${companyName} (${email})${locationEmail ? ` | CC: ${locationEmail}` : ''}`);
-  } catch (e) {
-    Logger.log(`ERROR sending termination email to ${email}: ${e.message}`);
-  }
+  return sendCustomerEmail_(email, subject, htmlBody, worqLocation, `Termination confirmation to ${companyName}`);
 }
 
 /**
@@ -595,8 +619,10 @@ function sendVendorNotificationEmail(renewals, terminations) {
       replyTo:  'it@worq.space'
     });
     Logger.log(`Vendor notification sent to ${vendorEmail} | CC: ${vendorCc}`);
+    return true;
   } catch (e) {
     Logger.log(`ERROR sending vendor notification: ${e.message}`);
+    return false;
   }
 }
 

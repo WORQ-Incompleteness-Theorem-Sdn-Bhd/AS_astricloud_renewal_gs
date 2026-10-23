@@ -409,18 +409,18 @@ Handles new Google Form submissions automatically via an installable `onFormSubm
 | Function | Type | Description |
 |----------|------|-------------|
 | `onFormSubmit(e)` | Installable trigger | Thin wrapper — runs `handleFormSubmit_(e)` inside a try/catch that routes any error to `notifyError_()`, so a failed submission surfaces instead of failing silently. Re-throws so the error still appears in the execution log. |
-| `handleFormSubmit_(e)` | Internal | Main handler: clears old yellow highlight → highlights new row → checks for duplicate email → moves duplicate to Archived Form Responses or sends vendor notification |
+| `handleFormSubmit_(e)` | Internal | Main handler: clears old yellow highlight → highlights new row → checks for duplicate company email → moves duplicate to Archived Form Responses or sends vendor notification |
 | `clearFormHighlights(formSheet)` | Internal | Scans all data rows in Form Responses 1 and removes yellow (`#FFFF00`) backgrounds only, leaving other cell colours untouched |
-| `isEmailDuplicate(formSheet, email, currentRowNum)` | Internal | Returns `true` if the submitted email already exists in any prior row of Form Responses 1 (case-insensitive). Skips the header row and the current new row. |
+| `isEmailDuplicate(formSheet, email, currentRowNum)` | Internal | Returns `true` if the submitted company email (Col H) already exists in any prior row of Form Responses 1 (case-insensitive). Skips the header row and the current new row. |
 | `moveToArchivedFormResponses(formSheet, rowNum, rowData)` | Internal | Appends the full row to the **Archived Form Responses** sheet (same column structure — direct copy), then deletes the row from Form Responses 1 to keep it clean. Creates the archive sheet automatically if it does not exist. |
 | `sendNewSignupVendorEmail(companyName, email, worqLocation, timestamp)` | Internal | Sends an HTML new-signup notification to the AstriCloud vendor. **To:** `CONFIG.VENDOR_EMAIL`. **CC:** `CONFIG.VENDOR_CC` + outlet email from `getLocationEmail()` (appended if found). **Subject:** `New Virtual Landline Signup Request - {Company Name}`. **ReplyTo:** `it@worq.space`. |
 | `setupFormSubmitTrigger()` | Manual (editor) | Creates an installable `onFormSubmit` trigger for the spreadsheet. Removes any existing trigger with the same handler first (idempotent). |
 | `removeFormSubmitTrigger()` | Manual (editor) | Removes all installable `onFormSubmit` triggers pointing to `onFormSubmit`. |
 
 **Duplicate check logic:**
-- Email from Col B (FORM_COLS.EMAIL) is normalised with `.toLowerCase().trim()`
+- Company Email from Col H (FORM_COLS.COMPANY_EMAIL) is normalised with `.toLowerCase().trim()` — the submitter email (Col B) is not used, since one submitter may register several companies
 - All rows in Form Responses 1 are scanned except the header (row 1) and the current new row
-- If any prior row has the same email → duplicate → row is moved to Archived Form Responses; no vendor email is sent
+- If any prior row has the same company email → duplicate → row is moved to Archived Form Responses; no vendor email is sent
 
 **Yellow highlight logic:**
 - On every form submit: all yellow (`#FFFF00`) backgrounds are cleared first, then the new submission row is highlighted yellow

@@ -5,7 +5,7 @@
  * On each submission:
  *  1. Clears old yellow highlight from previous submission
  *  2. Highlights the new submission row in yellow
- *  3. Checks if the email is a duplicate (already exists in a prior row)
+ *  3. Checks if the company email (col H) is a duplicate (already exists in a prior row)
  *     - Duplicate → move to Archived Form Responses, no vendor email
  *     - New       → send vendor notification to AstriCloud
  */
@@ -40,22 +40,24 @@ function handleFormSubmit_(e) {
   const email        = (rowData[CONFIG.FORM_COLS.EMAIL        - 1] || '').toString().trim();
   const companyName  = (rowData[CONFIG.FORM_COLS.COMPANY_NAME - 1] || '').toString().trim();
   const worqLocation = (rowData[CONFIG.FORM_COLS.WORQ_LOCATION - 1] || '').toString().trim();
+  const companyEmail = (rowData[CONFIG.FORM_COLS.COMPANY_EMAIL - 1] || '').toString().trim();
 
   // 1. Clear old yellow highlight, then highlight new row
   clearFormHighlights(formSheet);
   formSheet.getRange(rowNum, 1, 1, formSheet.getLastColumn()).setBackground('#FFFF00');
 
-  Logger.log(`onFormSubmit: row ${rowNum} | ${companyName} | ${email} | ${worqLocation}`);
+  Logger.log(`onFormSubmit: row ${rowNum} | ${companyName} | ${email} | ${companyEmail} | ${worqLocation}`);
 
-  // 2. Duplicate check
-  if (isEmailDuplicate(formSheet, email, rowNum)) {
-    Logger.log(`onFormSubmit: DUPLICATE email "${email}" — moving to Archived Form Responses`);
+  // 2. Duplicate check — keyed on company email (col H), not submitter email,
+  // since one submitter may register several companies.
+  if (isEmailDuplicate(formSheet, companyEmail, rowNum)) {
+    Logger.log(`onFormSubmit: DUPLICATE company email "${companyEmail}" — moving to Archived Form Responses`);
     moveToArchivedFormResponses(formSheet, rowNum, rowData);
     return;
   }
 
   // 3. New submission — notify vendor
-  sendNewSignupVendorEmail(companyName, email, worqLocation, timestamp);
+  sendNewSignupVendorEmail(companyName, companyEmail, worqLocation, timestamp);
 }
 
 /**
@@ -80,8 +82,8 @@ function clearFormHighlights(formSheet) {
 }
 
 /**
- * Returns true if `email` already exists in a prior row of Form Responses 1
- * (any row except the header row 1 and the current submission row).
+ * Returns true if `email` already exists in the Company Email column (H) of a
+ * prior row of Form Responses 1 (any row except header row 1 and the current row).
  */
 function isEmailDuplicate(formSheet, email, currentRowNum) {
   if (!email) return false;
@@ -93,7 +95,7 @@ function isEmailDuplicate(formSheet, email, currentRowNum) {
     const rowNum = i + 1; // 1-based row number
     if (rowNum === currentRowNum) continue;
 
-    const existingEmail = (data[i][CONFIG.FORM_COLS.EMAIL - 1] || '').toString().trim().toLowerCase();
+    const existingEmail = (data[i][CONFIG.FORM_COLS.COMPANY_EMAIL - 1] || '').toString().trim().toLowerCase();
     if (existingEmail === emailNorm) return true;
   }
 
@@ -176,19 +178,17 @@ function sendNewSignupVendorEmail(companyName, email, worqLocation, timestamp) {
     ? vendorCc + ',' + locationEmail
     : vendorCc;
 
-  try {
-    MailApp.sendEmail({
-      to:       getVendorEmail(),
-      cc:       cc,
-      subject:  subject,
-      htmlBody: htmlBody,
-      name:     'WORQ Operations Team',
-      replyTo:  'it@worq.space'
-    });
-    Logger.log(`sendNewSignupVendorEmail: sent for "${displayName}" | CC: ${cc}`);
-  } catch (err) {
-    Logger.log(`sendNewSignupVendorEmail ERROR: ${err.message}`);
-  }
+  // No try/catch: a failure propagates to onFormSubmit(), which emails an
+  // alert via notifyError_() — otherwise a missed signup would go unnoticed.
+  MailApp.sendEmail({
+    to:       getVendorEmail(),
+    cc:       cc,
+    subject:  subject,
+    htmlBody: htmlBody,
+    name:     'WORQ Operations Team',
+    replyTo:  'it@worq.space'
+  });
+  Logger.log(`sendNewSignupVendorEmail: sent for "${displayName}" | CC: ${cc}`);
 }
 
 /**

@@ -71,7 +71,7 @@ function syncRenewals() {
   if (emailCount > 0) {
     previewMsg += `\n\n📧 ${emailCount} confirmation email(s) will be sent to customers.`;
   }
-  previewMsg += `\n📨 1 vendor notification will be sent to ${CONFIG.VENDOR_EMAIL}.`;
+  previewMsg += `\n📨 1 vendor notification will be sent to ${getVendorEmail()}.`;
 
   previewMsg += '\n\nProceed?';
 
@@ -86,13 +86,17 @@ function syncRenewals() {
   const renewedCompanies    = [];
   const terminatedCompanies = [];
   let emailsSent = 0;
+  const emailsFailed = [];
 
   for (const r of toTerminate) {
     markMonthCell(trackerSheet, r.rowIdx + 1, r.currentEndDate, 'terminate');
     trackerSheet.getRange(r.rowIdx + 1, CONFIG.TRACKER_COLS.RENEWAL_STATUS).setValue('Terminated');
     if (r.companyEmail) {
-      sendTerminationEmail(r.companyName, r.companyEmail, r.pilotNumber, r.currentEndDate, r.worqLocation);
-      emailsSent++;
+      if (sendTerminationEmail(r.companyName, r.companyEmail, r.pilotNumber, r.currentEndDate, r.worqLocation)) {
+        emailsSent++;
+      } else {
+        emailsFailed.push(`${r.companyName} (${r.companyEmail}) — termination`);
+      }
     }
     terminatedCompanies.push(r.companyName);
     Logger.log(`Marked ${r.companyName} as Terminated. Run [05] Archive Terminated Customers when ready.`);
@@ -104,8 +108,11 @@ function syncRenewals() {
     extendMonthHeaders(trackerSheet, r.newEndDate);
     populate12MonthsFromDate(trackerSheet, r.rowIdx + 1, r.newStartDate);
     if (r.companyEmail) {
-      sendRenewalConfirmationEmail(r.companyName, r.companyEmail, r.pilotNumber, r.newStartDate, r.newEndDate, r.worqLocation);
-      emailsSent++;
+      if (sendRenewalConfirmationEmail(r.companyName, r.companyEmail, r.pilotNumber, r.newStartDate, r.newEndDate, r.worqLocation)) {
+        emailsSent++;
+      } else {
+        emailsFailed.push(`${r.companyName} (${r.companyEmail}) — renewal confirmation`);
+      }
     }
     trackerSheet.getRange(r.rowIdx + 1, CONFIG.TRACKER_COLS.RENEWAL_STATUS).setValue('Renewed');
 
@@ -119,7 +126,7 @@ function syncRenewals() {
   Logger.log(`Renewals processed: ${renewalsProcessed}`);
 
   // ── Vendor notification ────────────────────────────────────────────────────
-  sendVendorNotificationEmail(toRenew, toTerminate);
+  const vendorSent = sendVendorNotificationEmail(toRenew, toTerminate);
 
   // ── Summary alert ──────────────────────────────────────────────────────────
   const parts = [];
@@ -131,7 +138,14 @@ function syncRenewals() {
   }
 
   const emailLine = emailsSent > 0 ? `\n\nCustomer emails sent: ${emailsSent}` : '';
-  ui.alert(`✅ Sync complete\n\n${parts.join('\n\n')}${emailLine}\nVendor notification sent to ${CONFIG.VENDOR_EMAIL}`);
+  // Sheet changes are already applied — failed emails must be resent by hand.
+  const failedLine = emailsFailed.length > 0
+    ? `\n\n❌ ${emailsFailed.length} customer email(s) FAILED — please send manually:\n${emailsFailed.map(f => `• ${f}`).join('\n')}`
+    : '';
+  const vendorLine = vendorSent
+    ? `\nVendor notification sent to ${getVendorEmail()}`
+    : `\n\n❌ Vendor notification to ${getVendorEmail()} FAILED — please notify AstriCloud manually.`;
+  ui.alert(`${emailsFailed.length > 0 || !vendorSent ? '⚠️' : '✅'} Sync complete\n\n${parts.join('\n\n')}${emailLine}${failedLine}${vendorLine}`);
 }
 
 /**

@@ -32,7 +32,7 @@ function copyNewEntriesToTracker() {
   // Start from row 2 (skip header)
   for (let i = 1; i < formData.length; i++) {
     const companyName = formData[i][CONFIG.FORM_COLS.COMPANY_NAME - 1];
-    const email = formData[i][CONFIG.FORM_COLS.EMAIL - 1];
+    const email = formData[i][CONFIG.FORM_COLS.COMPANY_EMAIL - 1];
     const location = formData[i][CONFIG.FORM_COLS.WORQ_LOCATION - 1];
 
     // Check if company exists and is not already in tracker
@@ -70,6 +70,73 @@ function copyNewEntriesToTracker() {
     message = `ℹ️ No new entries to copy.\n\nAll form responses are already in TRACKER or ARCHIVED.`;
   }
   SpreadsheetApp.getUi().alert(message);
+}
+
+/**
+ * ONE-TIME CLEANUP — TRACKER col D used to be filled from the submitter email
+ * (Form col B). Replace it with the company email (Form col H), matching rows
+ * by company name (case/space-insensitive; latest form submission wins).
+ * Shows a preview and asks for confirmation before writing. Sends no email.
+ * Run from the Apps Script editor.
+ */
+function fixTrackerEmailsFromForm() {
+  const ui           = SpreadsheetApp.getUi();
+  const ss           = SpreadsheetApp.getActiveSpreadsheet();
+  const formSheet    = ss.getSheetByName(CONFIG.FORM_RESPONSES_SHEET);
+  const trackerSheet = ss.getSheetByName(CONFIG.TRACKER_SHEET);
+  if (!formSheet || !trackerSheet) {
+    ui.alert('❌ Form Responses 1 or TRACKER sheet not found.');
+    return;
+  }
+
+  const norm = v => (v || '').toString().trim().toLowerCase();
+
+  // Company name → company email; later rows overwrite earlier ones (latest wins)
+  const companyEmailByName = {};
+  formSheet.getDataRange().getValues().slice(1).forEach(row => {
+    const name  = norm(row[CONFIG.FORM_COLS.COMPANY_NAME - 1]);
+    const email = (row[CONFIG.FORM_COLS.COMPANY_EMAIL - 1] || '').toString().trim();
+    if (name && email) companyEmailByName[name] = email;
+  });
+
+  const trackerData = trackerSheet.getDataRange().getValues();
+  const changes = []; // { rowNum, name, from, to }
+
+  for (let i = 2; i < trackerData.length; i++) { // data starts row 3
+    const name     = trackerData[i][CONFIG.TRACKER_COLS.COMPANY_NAME - 1];
+    const current  = (trackerData[i][CONFIG.TRACKER_COLS.COMPANY_EMAIL - 1] || '').toString().trim();
+    const newEmail = companyEmailByName[norm(name)];
+    if (!newEmail || norm(newEmail) === norm(current)) continue;
+    changes.push({ rowNum: i + 1, name: name, from: current || '(blank)', to: newEmail });
+  }
+
+  if (changes.length === 0) {
+    ui.alert('ℹ️ Nothing to fix.\n\nAll TRACKER emails already match the company email from the form.');
+    return;
+  }
+
+  const MAX_DISPLAY = 25;
+  const preview = changes.slice(0, MAX_DISPLAY)
+    .map(c => `• ${c.name}: ${c.from} → ${c.to}`)
+    .join('\n') +
+    (changes.length > MAX_DISPLAY ? `\n...and ${changes.length - MAX_DISPLAY} more (see Logs).` : '');
+
+  const response = ui.alert(
+    'Fix TRACKER Emails — Preview',
+    `${changes.length} row(s) in TRACKER col D will be updated. NO emails will be sent.\n\n${preview}\n\nProceed?`,
+    ui.ButtonSet.YES_NO
+  );
+  if (response !== ui.Button.YES) {
+    ui.alert('Cancelled. No changes made.');
+    return;
+  }
+
+  for (const c of changes) {
+    trackerSheet.getRange(c.rowNum, CONFIG.TRACKER_COLS.COMPANY_EMAIL).setValue(c.to);
+    Logger.log(`fixTrackerEmailsFromForm: row ${c.rowNum} | ${c.name} | ${c.from} → ${c.to}`);
+  }
+
+  ui.alert(`✅ Updated ${changes.length} TRACKER email(s).`);
 }
 
 /**
