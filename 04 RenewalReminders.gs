@@ -14,8 +14,14 @@ function checkAndSendReminders() {
  */
 function monthlyRenewalReminders() {
   try {
-    const summary = runRenewalReminders();
-    sendReminderRunSummary_(summary);
+    // Once per month even if more than one account installed this trigger —
+    // otherwise the summary email (and any racing reminders) would double up.
+    const monthKey = 'monthlyReminders:' +
+      Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM');
+    runOncePerKey_(monthKey, () => {
+      const summary = runRenewalReminders();
+      sendReminderRunSummary_(summary);
+    });
   } catch (e) {
     notifyError_('monthlyRenewalReminders', e);
     throw e; // still surface in the Apps Script execution log

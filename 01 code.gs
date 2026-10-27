@@ -201,6 +201,36 @@ function removeReminderTriggers_() {
 }
 
 /**
+ * Run `fn` at most once per `key`, even when several triggers fire for the
+ * same event. Installable triggers belong to the account that created them
+ * and can't be seen or removed from another account, so if two people each
+ * installed one, both fire. The script lock and script cache are shared by
+ * every account, so the second run waits, sees the key and skips.
+ *
+ * The key is recorded only after `fn` succeeds, so a failed run can still be
+ * retried by the next trigger.
+ * @param {string}   key - identifies the event (max 250 chars)
+ * @param {Function} fn
+ * @returns {boolean} true if `fn` ran, false if skipped as already done
+ */
+function runOncePerKey_(key, fn) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000); // throws if not acquired — surfaces via notifyError_
+  try {
+    const cache = CacheService.getScriptCache();
+    if (cache.get(key)) {
+      Logger.log(`runOncePerKey_: "${key}" already handled by another trigger — skipping`);
+      return false;
+    }
+    fn();
+    cache.put(key, '1', 21600); // 6 hours, the cache maximum
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
  * Email an error alert to CONFIG.ALERT_EMAIL. Called from the catch blocks of
  * unattended triggered functions so silent failures become visible.
  * @param {string} context  - name of the function/operation that failed
@@ -268,7 +298,9 @@ function checkTriggerHealth() {
 
   SpreadsheetApp.getUi().alert(
     `Trigger Health Check\n\n` +
-    `Installed triggers (${triggers.length}):\n${lines}\n\n` +
-    status
+    `Installed triggers owned by ${Session.getEffectiveUser().getEmail()} (${triggers.length}):\n${lines}\n\n` +
+    status +
+    `\n\nNote: triggers installed by other accounts are not visible here. ` +
+    `Only one account should own the automation triggers — otherwise each one fires.`
   );
 }

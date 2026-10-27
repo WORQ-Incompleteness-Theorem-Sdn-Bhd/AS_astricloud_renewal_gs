@@ -13,19 +13,32 @@ function onFormSubmit(e) {
   // Thin wrapper: run the handler under error alerting so a failed submission
   // (which happens unattended) surfaces instead of failing silently.
   try {
-    handleFormSubmit_(e);
+    if (!e || !e.range) {
+      Logger.log('onFormSubmit: no event object — must be run via trigger, not manually');
+      return;
+    }
+    // Guard against the same submission being processed by more than one
+    // trigger (e.g. one installed by each of two accounts).
+    runOncePerKey_(formSubmissionKey_(e), () => handleFormSubmit_(e));
   } catch (err) {
     notifyError_('onFormSubmit', err);
     throw err; // still surface in the Apps Script execution log
   }
 }
 
-function handleFormSubmit_(e) {
-  if (!e || !e.range) {
-    Logger.log('onFormSubmit: no event object — must be run via trigger, not manually');
-    return;
-  }
+/**
+ * Identify a form submission by its submitted values (e.values), not its row
+ * number — a duplicate run may happen after the row was archived and deleted.
+ */
+function formSubmissionKey_(e) {
+  const raw = (e.values && e.values.length)
+    ? e.values.join('␟')
+    : 'row:' + e.range.getRow();
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, raw);
+  return 'formSubmit:' + Utilities.base64Encode(digest);
+}
 
+function handleFormSubmit_(e) {
   const ss        = SpreadsheetApp.getActiveSpreadsheet();
   const formSheet = ss.getSheetByName(CONFIG.FORM_RESPONSES_SHEET);
   if (!formSheet) {
