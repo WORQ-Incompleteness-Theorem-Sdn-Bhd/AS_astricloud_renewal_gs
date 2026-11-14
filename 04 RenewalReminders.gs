@@ -291,7 +291,7 @@ ${clearedSection}
       subject: subject,
       htmlBody: htmlBody,
       name: 'AstriCloud Tracker'
-    });
+    }, { internal: true }); // still sent if Config is unreadable (12 TestMode)
     Logger.log(`Reminder run summary emailed to ${CONFIG.REMINDER_SUMMARY_EMAIL}`);
   } catch (e) {
     Logger.log(`ERROR emailing reminder run summary: ${e.message}`);

@@ -35,7 +35,7 @@ function syncRenewals() {
     const currentEndDate = new Date(contractEnd);
 
     if (renewalStatus === 'Not Renewing') {
-      const reason = terminationReasons[normPilot_(pilotNumber)] || '';
+      const reason = terminationReasonFor_(terminationReasons, pilotNumber, currentEndDate);
       toTerminate.push({ rowIdx: i, companyName, companyEmail, pilotNumber, currentEndDate, worqLocation, reason });
     } else if (renewalStatus === 'Renew') {
       const newStartDate = new Date(currentEndDate.getFullYear(), currentEndDate.getMonth() + 1, 1);

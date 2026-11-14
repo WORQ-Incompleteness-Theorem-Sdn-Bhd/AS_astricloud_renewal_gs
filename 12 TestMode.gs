@@ -26,9 +26,27 @@ function getTestEmailOverride_() {
 /**
  * Drop-in replacement for MailApp.sendEmail(options) (object form only).
  * @param {Object} options - same fields as MailApp.sendEmail
+ * @param {{internal?: boolean}} [opts] - internal: true for IT-only mail
+ *        (alerts, summaries) that must still go out if Config is unreadable
  */
-function sendMail_(options) {
-  const override = getTestEmailOverride_();
+function sendMail_(options, opts) {
+  let override;
+  try {
+    override = getTestEmailOverride_();
+  } catch (err) {
+    // Fail closed for client/vendor email. Internal-only mail (error alerts,
+    // monthly summary — always to it@worq.space, no CC) is still sent as-is,
+    // so a Config failure is never silent.
+    if (opts && opts.internal) {
+      Logger.log(`sendMail_: Config unreadable (${err.message}) — sending internal mail as-is`);
+      MailApp.sendEmail(Object.assign({}, options, {
+        subject: '[CONFIG UNREADABLE] ' + (options.subject || ''),
+        htmlBody: `<p style="color:#cc0000;"><strong>Note:</strong> the Config sheet could not be read (${String(err.message).replace(/</g, '&lt;')}). Client and AstriCloud emails are blocked until this is fixed.</p>` + (options.htmlBody || '')
+      }));
+      return;
+    }
+    throw err;
+  }
   if (!override) {
     MailApp.sendEmail(options);
     return;

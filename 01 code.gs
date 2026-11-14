@@ -256,7 +256,7 @@ function notifyError_(context, error) {
         `<pre style="background:#f4f4f4;padding:10px;border:1px solid #ddd;white-space:pre-wrap;">${stack}</pre>` +
         `<p style="color:#888;font-size:12px;">Automated alert from the AstriCloud Tracker.</p>`,
       name: 'AstriCloud Tracker'
-    });
+    }, { internal: true }); // still sent if Config is unreadable (12 TestMode)
   } catch (mailErr) {
     // Last resort — if even the alert email fails, at least log it.
     Logger.log(`notifyError_ FAILED to send alert for ${context}: ${mailErr.message}`);

@@ -175,6 +175,7 @@ function getTerminationReasons_() {
   const pilotCol  = headers.indexOf(TERMINATION.Q.PILOT_NUMBER);
   const reasonCol = headers.indexOf(TERMINATION.Q.REASON);
   const statusCol = headers.indexOf(TERMINATION.STATUS_HEADERS[0]);
+  const timeCol   = headers.indexOf('Timestamp');
   if (pilotCol < 0 || reasonCol < 0 || statusCol < 0) return {};
 
   const reasons = {};
@@ -183,9 +184,24 @@ function getTerminationReasons_() {
     const pilot  = normPilot_(data[i][pilotCol]);
     const reason = (data[i][reasonCol] || '').toString().trim();
     if (!pilot || !reason || !status || status.indexOf('NEEDS REVIEW') === 0) continue;
-    reasons[pilot] = reason;
+    const at = timeCol >= 0 && data[i][timeCol] ? new Date(data[i][timeCol]) : null;
+    reasons[pilot] = { reason: reason, at: at };   // later rows win
   }
   return reasons;
+}
+
+/**
+ * The reason to show for a termination, or '' — only if the request was
+ * submitted during the current contract cycle (the 12 months ending on
+ * contractEnd), so a reason from an earlier cycle is never reused.
+ */
+function terminationReasonFor_(reasons, pilotNumber, contractEnd) {
+  const r = reasons[normPilot_(pilotNumber)];
+  if (!r || !r.reason) return '';
+  if (!r.at || isNaN(r.at.getTime()) || !contractEnd) return '';
+  const end = new Date(contractEnd);
+  const cycleStart = new Date(end.getFullYear() - 1, end.getMonth(), end.getDate() + 1);
+  return r.at >= cycleStart ? r.reason : '';
 }
 
 // Compare phone numbers by digits only: ignores spaces, dashes, dots, brackets,
@@ -311,6 +327,24 @@ function createTerminationForm() {
     return;
   }
 
+  // A form was created before but its tab never got renamed: finish that
+  // setup instead of creating a second form.
+  const existingId = PropertiesService.getScriptProperties().getProperty(TERMINATION.FORM_ID_PROPERTY);
+  if (existingId) {
+    const linked = ss.getSheets().find(s => (s.getFormUrl() || '').indexOf(existingId) !== -1);
+    if (linked) {
+      linked.setName(TERMINATION.SHEET);
+      ui.alert(`✅ Existing Termination Request form found — renamed its tab "${linked.getName()}". No new form created.`);
+    } else {
+      ui.alert(
+        `⚠️ A Termination Request form was already created (ID ${existingId}) but no tab in this sheet is linked to it.\n\n` +
+        `Open that form → Responses → Link to Sheets → this spreadsheet, then run createTerminationForm() again. ` +
+        `No new form was created.`
+      );
+    }
+    return;
+  }
+
   const form = FormApp.create('AstriCloud Virtual Landline - Termination Request');
   form.setDescription(
     'Use this form if you do not wish to renew your WORQ virtual landline service.\n\n' +
@@ -360,7 +394,8 @@ function createTerminationForm() {
     `Edit link:\n${form.getEditUrl()}\n\n` +
     (respSheet
       ? `Responses go to the "${TERMINATION.SHEET}" tab.\n\n`
-      : `⚠️ Could not find the new response tab — rename the newest "Form Responses" tab to "${TERMINATION.SHEET}" by hand.\n\n`) +
+      : `⚠️ SETUP NOT FINISHED — could not find the new response tab yet. Termination requests are IGNORED until it is named "${TERMINATION.SHEET}". ` +
+        `Wait a minute and run createTerminationForm() again (it will rename the tab, not create a second form), or rename the newest "Form Responses" tab by hand.\n\n`) +
     `Ops notifications go to the ${TERMINATION.NOTIFY_CONFIG_KEY} value in the Config tab.\n\n` +
     'The form was created in your My Drive — move it next to this spreadsheet if you like.'
   );
