@@ -459,10 +459,11 @@ Lets clients tell us they won't renew. Verified requests set TRACKER col F to `N
 
 | Function | Type | Description |
 |----------|------|-------------|
-| `createTerminationForm()` | Manual (editor), once per sheet | Creates the form (Company Name, Pilot Number, Registered Company Email, Reason, Acknowledgement), links it, renames its tab to `Termination Requests`, seeds `TERMINATION_NOTIFY_EMAIL`. No-op if the tab exists. Done on production 14 Nov 2026 (form owned by the department account). |
+| `createTerminationForm()` | Manual (editor), once per sheet | Creates the form (Company Name, Pilot Number, Registered Company Email, Reason, Acknowledgement), links it, renames its tab to `Termination Requests`, seeds `TERMINATION_NOTIFY_EMAIL`. No-op if the tab exists. If a form was already created (script property `TERMINATION_FORM_ID`) but its tab wasn't renamed, re-running renames that tab instead of creating a second form. Done on production 14 Nov 2026 (form owned by the department account). |
 | `handleTerminationSubmit_(e)` | Internal (via `onFormSubmit`) | Matches the request, updates col F + adds a cell note when verified, writes status columns G–J, emails Ops. |
 | `matchTerminationRequest_(data, req)` | Internal, pure | Auto-approves only when the pilot number matches **exactly one** TRACKER row **and** the email equals that row's col D. Otherwise returns a `NEEDS REVIEW …` status and changes nothing. |
-| `getTerminationReasons_()` | Internal | `{normalisedPilot: reason}` from verified rows (skips `NEEDS REVIEW`); used by `syncRenewals()` for the AstriCloud email's Reason column. |
+| `getTerminationReasons_()` | Internal | `{normalisedPilot: {reason, at}}` from verified rows (skips `NEEDS REVIEW`; latest submission wins). |
+| `terminationReasonFor_(reasons, pilot, contractEnd)` | Internal | Used by `syncRenewals()` for the AstriCloud email's Reason column. Returns the reason only if it was submitted within the current contract cycle (the 12 months ending on `contractEnd`), so a reason from an earlier cycle is never reused. |
 | `sendTerminationRequestOpsEmail_()` | Internal | To `TERMINATION_NOTIFY_EMAIL`, CC outlet (`getLocationEmail()`), sender name **AstriCloud Tracker**. Always shows the **submitted** pilot number and email; company, location and contract end come from the matched TRACKER row. When the submitted company name or email differs from TRACKER, the TRACKER value is shown next to it in red (`form says:` / `registered:`). |
 | `normPilot_(v)` / `normEmail_(v)` | Internal | Digits only, leading 0s and `60` country code stripped / trimmed lowercase. |
 
@@ -472,7 +473,8 @@ Lets clients tell us they won't renew. Verified requests set TRACKER col F to `N
 | Function | Description |
 |----------|-------------|
 | `sendMail_(options)` | Drop-in for `MailApp.sendEmail(options)` (all sends in 01/04/10/11 use it). If Config `TEST_EMAIL_OVERRIDE` is set, sends only to that address, drops CC/BCC, sets Reply-To to the override (so a tester's reply never reaches the client), prefixes `[TEST]` and adds a banner listing the original recipients. Otherwise sends unchanged. |
-| `getTestEmailOverride_()` | Reads the Config key; also drives the `🧪 TEST MODE ON` / `⚠️ LIVE MODE` line in the [04] Sync preview. **Fails closed:** if Config can't be read, the error propagates and nothing is sent (no silent fallback to live recipients). |
+| `getTestEmailOverride_()` | Reads the Config key; also drives the `🧪 TEST MODE ON` / `⚠️ LIVE MODE` line in the [04] Sync preview. **Fails closed:** if Config can't be read, the error propagates and client/AstriCloud mail is not sent (no silent fallback to live recipients). |
+| `sendMail_(options, { internal: true })` | Used by `notifyError_()` and the monthly reminder summary (IT-only, to it@worq.space, no CC). If Config can't be read, these are still sent as-is with a `[CONFIG UNREADABLE]` subject prefix, so the failure is never silent. |
 
 ---
 
