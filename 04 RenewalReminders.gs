@@ -286,7 +286,7 @@ ${clearedSection}
 <p style="color:#888;font-size:12px;">Automated message from the AstriCloud Tracker.</p>`;
 
   try {
-    MailApp.sendEmail({
+    sendMail_({
       to: CONFIG.REMINDER_SUMMARY_EMAIL,
       subject: subject,
       htmlBody: htmlBody,
@@ -467,7 +467,7 @@ function sendCustomerEmail_(email, subject, htmlBody, worqLocation, label) {
   try {
     const options = { to: email, subject: subject, htmlBody: htmlBody, name: 'WORQ Operations Team', replyTo: 'it@worq.space' };
     if (locationEmail) options.cc = locationEmail;
-    MailApp.sendEmail(options);
+    sendMail_(options);
 
     Logger.log(`${label} sent (${email})${locationEmail ? ` | CC: ${locationEmail}` : ''}`);
     return true;
@@ -569,6 +569,7 @@ function sendVendorNotificationEmail(renewals, terminations) {
 
   // Build table rows — terminations first, then renewals (matches screenshot order)
   let tableRows = '';
+  const escHtml = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   for (const r of terminations) {
     const endStr = Utilities.formatDate(r.currentEndDate, tz, 'dd-MMM-yyyy');
@@ -579,6 +580,7 @@ function sendVendorNotificationEmail(renewals, terminations) {
         <td style="border:1px solid #000;padding:6px 12px;text-align:center;">${endStr}</td>
         <td style="border:1px solid #000;padding:6px 12px;text-align:center;color:#cc0000;font-weight:bold;">Terminate</td>
         <td style="border:1px solid #000;padding:6px 12px;">Remove from WORQ Billing</td>
+        <td style="border:1px solid #000;padding:6px 12px;">${escHtml(r.reason) || '—'}</td>
       </tr>`;
   }
 
@@ -591,6 +593,7 @@ function sendVendorNotificationEmail(renewals, terminations) {
         <td style="border:1px solid #000;padding:6px 12px;text-align:center;">${endStr}</td>
         <td style="border:1px solid #000;padding:6px 12px;text-align:center;color:#007700;font-weight:bold;">Renew</td>
         <td style="border:1px solid #000;padding:6px 12px;">Continue on WORQ Billing</td>
+        <td style="border:1px solid #000;padding:6px 12px;">—</td>
       </tr>`;
   }
 
@@ -603,6 +606,7 @@ function sendVendorNotificationEmail(renewals, terminations) {
     <th style="border:1px solid #000;padding:8px 14px;">End</th>
     <th style="border:1px solid #000;padding:8px 14px;">Final Status</th>
     <th style="border:1px solid #000;padding:8px 14px;text-align:left;">AstriCloud Action</th>
+    <th style="border:1px solid #000;padding:8px 14px;text-align:left;">Reason</th>
   </tr>
   ${tableRows}
 </table>
@@ -616,7 +620,7 @@ function sendVendorNotificationEmail(renewals, terminations) {
   const vendorCc    = getVendorCc();
 
   try {
-    MailApp.sendEmail({
+    sendMail_({
       to:       vendorEmail,
       cc:       vendorCc,
       subject:  subject,

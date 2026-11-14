@@ -245,7 +245,7 @@ function notifyError_(context, error) {
   Logger.log(`ERROR in ${context}: ${message}`);
 
   try {
-    MailApp.sendEmail({
+    sendMail_({
       to: CONFIG.ALERT_EMAIL,
       subject: `⚠️ AstriCloud Tracker error — ${context}`,
       htmlBody:

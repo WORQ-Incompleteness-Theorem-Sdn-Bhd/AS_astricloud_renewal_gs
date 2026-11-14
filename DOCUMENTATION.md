@@ -8,15 +8,18 @@ A Google Apps Script automation system that manages customer contract tracking f
 
 | Resource | Testing | Production |
 |----------|---------|------------|
-| Google Sheet | [Testing Sheet](https://docs.google.com/spreadsheets/d/1USIQXESClxQ_DHVD7qSLtAh8I1JbJUtLSg3KVDNlbn0/edit?pli=1&gid=266634575#gid=266634575) | [Production Sheet](https://docs.google.com/spreadsheets/d/1t_-C-TZjd7dN6uweYG3wdZkToVAG4pxfEKInIG-TolE/edit?pli=1&gid=266634575#gid=266634575) |
-| Apps Script | [Testing Script](https://script.google.com/u/0/home/projects/1T-z8HKXroRAMV8a9WBF0NdlQG38FrjHxPmLlJ5cXblBuioVFHwlObFlK) | [Production Script](https://script.google.com/u/0/home/projects/1RCLJ-hDSe_9ESl4LpHEfaYhaM5BhD8MpOEJ0XgLYDIx9ZSVxO9n_EQvH/) |
-| Google Form | [Testing Form](https://docs.google.com/forms/d/1rC0suleIU9AqaQWaM3uPkZs7KlLo1O9wWugOgYYrYvc/edit) | [Production Form](https://docs.google.com/forms/d/1UAEJlLobYMUNB5JJFadbjHIEs1TmA90k6-1plIgERhs/preview) |
+| Google Sheet | [Testing Sheet (Shuk-Testing)](https://docs.google.com/spreadsheets/d/1CV6_BGhpISWgCxwAICuRi6ePmVb-KqOxgTnRs_PkzvE) | [Production Sheet](https://docs.google.com/spreadsheets/d/1t_-C-TZjd7dN6uweYG3wdZkToVAG4pxfEKInIG-TolE/edit?pli=1&gid=266634575#gid=266634575) |
+| Apps Script | [Testing Script](https://script.google.com/u/0/home/projects/11ALID35r_Yk8GKoVbMevWCfBOPmhftR52lYktgicqDSNJ7E64t4_2tl4/) | [Production Script](https://script.google.com/u/0/home/projects/1RCLJ-hDSe_9ESl4LpHEfaYhaM5BhD8MpOEJ0XgLYDIx9ZSVxO9n_EQvH/) |
+| Registration Form | [Testing Form](https://docs.google.com/forms/d/1SHLd02pJIEZcr1wcgEIslmT-1mthZQfOC--kWyTN7b4/edit) | [Production Form](https://docs.google.com/forms/d/1UAEJlLobYMUNB5JJFadbjHIEs1TmA90k6-1plIgERhs/preview) |
+| Termination Request Form | [Testing Form](https://docs.google.com/forms/d/1A7TxeyFz8QotG107PWon4GVZCV1MkWkChXgVG3zRA6Y/edit) | [Production Form (client link)](https://docs.google.com/forms/d/e/1FAIpQLSccX6orbIQLcSI4-VQOC2Mv9Ij6h2zRGosD7prkXhTZa3rGSw/viewform) |
+
+> The previous testing sheet/script (`1USIQ…` / `1T-z8…`) is superseded by Shuk-Testing (Nov 2026), which has the termination form and `TEST_EMAIL_OVERRIDE` set.
 
 ---
 
 ## Sheet Structure
 
-The spreadsheet contains 6 active sheets:
+The spreadsheet contains 7 active sheets:
 
 ### 1. TRACKER (Main sheet)
 The central tracking sheet with a monthly payment grid. It has **two header rows**:
@@ -76,8 +79,25 @@ Runtime Key/Value settings sheet. Lets admins change vendor email recipients **w
 |-----|---------|---------|
 | `VENDOR_EMAIL` | `getVendorEmail()` | Main "To" recipient for vendor notification emails (AstriCloud) |
 | `VENDOR_CC` | `getVendorCc()` | Comma-separated CC list for vendor notification emails |
+| `TERMINATION_NOTIFY_EMAIL` | `sendTerminationRequestOpsEmail_()` | Recipient of the termination-request notification (production: `it@worq.space`; fallback `CONFIG.ALERT_EMAIL`). The client's outlet email is CC'd automatically. Seeded by `createTerminationForm()`. |
+| `TEST_EMAIL_OVERRIDE` | `sendMail_()` | **Testing copies only — never on production.** When set, every email the script sends goes only to this address (subject prefixed `[TEST]`, original recipients shown in a banner). |
 
 > Edit column B to add/remove recipients — changes apply on the next email, no `clasp push` required. The Config sheet is the source of truth; the `CONFIG.VENDOR_EMAIL` / `CONFIG.VENDOR_CC` values in code are only a fallback used when the sheet or key is absent.
+
+### 7. Termination Requests
+Auto-populated by the **Termination Request Form** (created by `createTerminationForm()`, Nov 2026). The tab name must stay exactly `Termination Requests` — `handleFormSubmit_()` routes submissions by tab name.
+
+| Column | Field | Notes |
+|--------|-------|-------|
+| A | Timestamp | |
+| B | Company Name | Reference only — not used for matching |
+| C | Pilot Number (Virtual Landline Number) | Matched against TRACKER col E (any format: `03-3015008`, `+60 3…`, missing leading 0) |
+| D | Registered Company Email | Must equal TRACKER col D of the matched row |
+| E | Reason for Termination | Copied into the AstriCloud email's Reason column once verified |
+| F | Acknowledgement | Required checkbox (service runs to contract end, no refund) |
+| G–J | Processing Status, Matched TRACKER Company, Contract End Date, Processed At | Written by the script. `NEEDS REVIEW …` rows are highlighted red. Setting Processing Status to e.g. `Approved by Ops` lets the reason reach AstriCloud. |
+
+> Question titles are read by name (`TERMINATION.Q` in `11 TerminationForm.gs`) — renaming a question in the form breaks matching.
 
 ---
 
@@ -409,7 +429,7 @@ Handles new Google Form submissions automatically via an installable `onFormSubm
 | Function | Type | Description |
 |----------|------|-------------|
 | `onFormSubmit(e)` | Installable trigger | Thin wrapper — runs `handleFormSubmit_(e)` inside a try/catch that routes any error to `notifyError_()`, so a failed submission surfaces instead of failing silently. Re-throws so the error still appears in the execution log. |
-| `handleFormSubmit_(e)` | Internal | Main handler: clears old yellow highlight → highlights new row → checks for duplicate company email → moves duplicate to Archived Form Responses or sends vendor notification |
+| `handleFormSubmit_(e)` | Internal | **Routes by response tab first:** submissions landing in `Termination Requests` go to `handleTerminationSubmit_(e)` (11 TerminationForm); any other tab except Form Responses 1 is ignored. Registration submissions then: clear old yellow highlight → highlight new row → check for duplicate company email → move duplicate to Archived Form Responses or send vendor notification |
 | `clearFormHighlights(formSheet)` | Internal | Scans all data rows in Form Responses 1 and removes yellow (`#FFFF00`) backgrounds only, leaving other cell colours untouched |
 | `isEmailDuplicate(formSheet, email, currentRowNum)` | Internal | Returns `true` if the submitted company email (Col H) already exists in any prior row of Form Responses 1 (case-insensitive). Skips the header row and the current new row. |
 | `moveToArchivedFormResponses(formSheet, rowNum, rowData)` | Internal | Appends the full row to the **Archived Form Responses** sheet (same column structure — direct copy), then deletes the row from Form Responses 1 to keep it clean. Creates the archive sheet automatically if it does not exist. |
@@ -430,7 +450,29 @@ Handles new Google Form submissions automatically via an installable `onFormSubm
 - Base: `CONFIG.VENDOR_CC` (full AstriCloud + WORQ recipient list)
 - The outlet email from the Addresses sheet is appended if the submitted WORQ Location matches a row in col A
 
-> **Trigger setup**: Run `setupFormSubmitTrigger()` once from the Apps Script editor (or uncomment its menu item) to install the trigger. Verify in Apps Script > Triggers that an `onFormSubmit` trigger pointing to `onFormSubmit` is present.
+> **Trigger setup**: Run `setupFormSubmitTrigger()` once from the Apps Script editor (or uncomment its menu item) to install the trigger. Verify in Apps Script > Triggers that an `onFormSubmit` trigger pointing to `onFormSubmit` is present. The same trigger serves both the Registration Form and the Termination Request Form.
+
+---
+
+### 11 TerminationForm.gs — Client Termination Requests
+Lets clients tell us they won't renew. Verified requests set TRACKER col F to `Not Renewing`; Ops then runs **[04] Sync Renewals** as usual (which sends the client confirmation and the AstriCloud email). Nothing is emailed to the client or AstriCloud from the form itself. Terminations always take effect at contract end.
+
+| Function | Type | Description |
+|----------|------|-------------|
+| `createTerminationForm()` | Manual (editor), once per sheet | Creates the form (Company Name, Pilot Number, Registered Company Email, Reason, Acknowledgement), links it, renames its tab to `Termination Requests`, seeds `TERMINATION_NOTIFY_EMAIL`. No-op if the tab exists. Done on production 14 Nov 2026 (form owned by the department account). |
+| `handleTerminationSubmit_(e)` | Internal (via `onFormSubmit`) | Matches the request, updates col F + adds a cell note when verified, writes status columns G–J, emails Ops. |
+| `matchTerminationRequest_(data, req)` | Internal, pure | Auto-approves only when the pilot number matches **exactly one** TRACKER row **and** the email equals that row's col D. Otherwise returns a `NEEDS REVIEW …` status and changes nothing. |
+| `getTerminationReasons_()` | Internal | `{normalisedPilot: reason}` from verified rows (skips `NEEDS REVIEW`); used by `syncRenewals()` for the AstriCloud email's Reason column. |
+| `sendTerminationRequestOpsEmail_()` | Internal | To `TERMINATION_NOTIFY_EMAIL`, CC outlet (`getLocationEmail()`), sender name **AstriCloud Tracker**. Shows TRACKER values; submitted values only when they differ (in red). |
+| `normPilot_(v)` / `normEmail_(v)` | Internal | Digits only, leading 0s and `60` country code stripped / trimmed lowercase. |
+
+**Why pilot + email:** pilot numbers are public phone numbers, so the registered email is the proof the request is genuine.
+
+### 12 TestMode.gs — Safe testing on copies
+| Function | Description |
+|----------|-------------|
+| `sendMail_(options)` | Drop-in for `MailApp.sendEmail(options)` (all sends in 01/04/10/11 use it). If Config `TEST_EMAIL_OVERRIDE` is set, sends only to that address, drops CC/BCC, prefixes `[TEST]` and adds a banner listing the original recipients. Otherwise sends unchanged. |
+| `getTestEmailOverride_()` | Reads the Config key; also drives the `🧪 TEST MODE ON` / `⚠️ LIVE MODE` line in the [04] Sync preview. |
 
 ---
 
@@ -464,7 +506,9 @@ The monthly run additionally emails a **success summary** (`sendReminderRunSumma
 
 Run **`checkTriggerHealth()`** from the Apps Script editor periodically. It lists the installed triggers and warns if either expected trigger is missing.
 
-> **Why this matters:** triggers can be silently dropped by a script copy, an owner change, or a manual deletion — with no warning. A missing `monthlyRenewalReminders` means **no renewal reminders go out at all**; a missing `onFormSubmit` means **new signups never reach the vendor**. This check is the only thing that surfaces either condition.
+> **Why this matters:** triggers can be silently dropped by a script copy, an owner change, or a manual deletion — with no warning. A missing `monthlyRenewalReminders` means **no renewal reminders go out at all**; a missing `onFormSubmit` means **new signups never reach the vendor and termination requests are never processed**. This check is the only thing that surfaces either condition.
+
+> Production triggers are owned by the **IT department account**. Run `checkTriggerHealth()` as that account; after any push that adds a Google permission (e.g. the Forms scope added in Nov 2026), that account must run it once to re-authorize, or the triggers fail.
 
 ### Known gaps
 
