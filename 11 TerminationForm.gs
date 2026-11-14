@@ -162,9 +162,11 @@ function isInArchived_(ss, req) {
 
 /**
  * Reasons from verified termination requests, keyed by normalised pilot number
- * (latest submission wins). Used by [04] Sync Renewals for the AstriCloud email.
- * Rows flagged NEEDS REVIEW are skipped — they were never verified.
- * @returns {Object<string,string>}
+ * (latest submission wins — by Timestamp, not row order, so sorting the tab
+ * can't change the result). Used by [04] Sync Renewals via
+ * terminationReasonFor_(). Rows flagged NEEDS REVIEW are skipped — they were
+ * never verified.
+ * @returns {Object<string,{reason:string, at:Date|null}>}
  */
 function getTerminationReasons_() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TERMINATION.SHEET);
@@ -185,7 +187,10 @@ function getTerminationReasons_() {
     const reason = (data[i][reasonCol] || '').toString().trim();
     if (!pilot || !reason || !status || status.indexOf('NEEDS REVIEW') === 0) continue;
     const at = timeCol >= 0 && data[i][timeCol] ? new Date(data[i][timeCol]) : null;
-    reasons[pilot] = { reason: reason, at: at };   // later rows win
+    const prev = reasons[pilot];
+    const t = at && !isNaN(at.getTime()) ? at.getTime() : -Infinity;
+    const prevT = prev && prev.at && !isNaN(prev.at.getTime()) ? prev.at.getTime() : -Infinity;
+    if (!prev || t >= prevT) reasons[pilot] = { reason: reason, at: at };   // newest Timestamp wins
   }
   return reasons;
 }
