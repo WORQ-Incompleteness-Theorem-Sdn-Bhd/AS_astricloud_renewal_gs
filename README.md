@@ -25,7 +25,7 @@ Google Apps Script automation for WORQ's AstriCloud (virtual landline) service �
 | Archived Form Responses | Duplicate form submissions (same email re-submitted); moved here automatically by the form submit trigger |
 | Addresses | WORQ location → email lookup table; used to CC the correct location inbox on customer emails |
 | Config | Key/Value settings: `VENDOR_EMAIL`, `VENDOR_CC`, `TERMINATION_NOTIFY_EMAIL`, and (testing only) `TEST_EMAIL_OVERRIDE` |
-| Termination Requests | Auto-populated by the Termination Request Form; the script writes Processing Status / Matched Company / Contract End / Processed At |
+| Termination Requests | Auto-populated by the Termination Request Form; the script writes the columns `Processing Status`, `Matched TRACKER Company`, `Contract End Date`, `Processed At`. The tab name must stay exactly `Termination Requests` — `handleFormSubmit_()` routes by tab name and ignores submissions to any other tab. |
 
 ## File Structure
 

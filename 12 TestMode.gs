@@ -12,13 +12,15 @@
 
 var TEST_MODE_CONFIG_KEY = 'TEST_EMAIL_OVERRIDE';
 
-/** @returns {string|null} override address when test mode is on */
+/**
+ * @returns {string|null} override address when test mode is on.
+ * No try/catch on purpose (fail closed): if the Config sheet can't be read,
+ * the error propagates and nothing is sent, instead of silently treating a
+ * test copy as live and emailing real recipients. Callers already surface
+ * send failures (alert email / "please send manually" in the summary).
+ */
 function getTestEmailOverride_() {
-  try {
-    return getConfigValue(TEST_MODE_CONFIG_KEY);
-  } catch (err) {
-    return null;
-  }
+  return getConfigValue(TEST_MODE_CONFIG_KEY);
 }
 
 /**
@@ -37,6 +39,7 @@ function sendMail_(options) {
   delete test.cc;
   delete test.bcc;
   test.to = override;
+  test.replyTo = override; // a reply from the tester must never reach the real client
   test.subject = '[TEST] ' + (options.subject || '');
 
   const banner =
@@ -44,6 +47,7 @@ function sendMail_(options) {
     `<strong style="color:#cc0000;">🧪 TEST MODE — this email was NOT sent to the real recipients.</strong><br>` +
     `<strong>Would have gone to:</strong> ${esc(options.to) || '—'}<br>` +
     `<strong>CC:</strong> ${esc(options.cc) || '—'}` +
+    (options.replyTo ? `<br><strong>Reply-To:</strong> ${esc(options.replyTo)}` : '') +
     (options.bcc ? `<br><strong>BCC:</strong> ${esc(options.bcc)}` : '') +
     `<br><span style="color:#888;">Turn off: remove ${TEST_MODE_CONFIG_KEY} from the Config tab.</span></div>`;
 

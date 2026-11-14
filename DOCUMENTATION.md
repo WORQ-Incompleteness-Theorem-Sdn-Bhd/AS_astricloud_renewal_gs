@@ -79,7 +79,7 @@ Runtime Key/Value settings sheet. Lets admins change vendor email recipients **w
 |-----|---------|---------|
 | `VENDOR_EMAIL` | `getVendorEmail()` | Main "To" recipient for vendor notification emails (AstriCloud) |
 | `VENDOR_CC` | `getVendorCc()` | Comma-separated CC list for vendor notification emails |
-| `TERMINATION_NOTIFY_EMAIL` | `sendTerminationRequestOpsEmail_()` | Recipient of the termination-request notification (production: `it@worq.space`; fallback `CONFIG.ALERT_EMAIL`). The client's outlet email is CC'd automatically. Seeded by `createTerminationForm()`. |
+| `TERMINATION_NOTIFY_EMAIL` | `sendTerminationRequestOpsEmail_()` | Recipient of the termination-request notification (production: `it@worq.space`; fallback `CONFIG.ALERT_EMAIL`). The client's outlet email is CC'd automatically. Seeded by `createTerminationForm()` **only if the Config sheet already exists** — on a sheet without one, run `setupConfigSheet()` first or add the row by hand. |
 | `TEST_EMAIL_OVERRIDE` | `sendMail_()` | **Testing copies only — never on production.** When set, every email the script sends goes only to this address (subject prefixed `[TEST]`, original recipients shown in a banner). |
 
 > Edit column B to add/remove recipients — changes apply on the next email, no `clasp push` required. The Config sheet is the source of truth; the `CONFIG.VENDOR_EMAIL` / `CONFIG.VENDOR_CC` values in code are only a fallback used when the sheet or key is absent.
@@ -463,7 +463,7 @@ Lets clients tell us they won't renew. Verified requests set TRACKER col F to `N
 | `handleTerminationSubmit_(e)` | Internal (via `onFormSubmit`) | Matches the request, updates col F + adds a cell note when verified, writes status columns G–J, emails Ops. |
 | `matchTerminationRequest_(data, req)` | Internal, pure | Auto-approves only when the pilot number matches **exactly one** TRACKER row **and** the email equals that row's col D. Otherwise returns a `NEEDS REVIEW …` status and changes nothing. |
 | `getTerminationReasons_()` | Internal | `{normalisedPilot: reason}` from verified rows (skips `NEEDS REVIEW`); used by `syncRenewals()` for the AstriCloud email's Reason column. |
-| `sendTerminationRequestOpsEmail_()` | Internal | To `TERMINATION_NOTIFY_EMAIL`, CC outlet (`getLocationEmail()`), sender name **AstriCloud Tracker**. Shows TRACKER values; submitted values only when they differ (in red). |
+| `sendTerminationRequestOpsEmail_()` | Internal | To `TERMINATION_NOTIFY_EMAIL`, CC outlet (`getLocationEmail()`), sender name **AstriCloud Tracker**. Always shows the **submitted** pilot number and email; company, location and contract end come from the matched TRACKER row. When the submitted company name or email differs from TRACKER, the TRACKER value is shown next to it in red (`form says:` / `registered:`). |
 | `normPilot_(v)` / `normEmail_(v)` | Internal | Digits only, leading 0s and `60` country code stripped / trimmed lowercase. |
 
 **Why pilot + email:** pilot numbers are public phone numbers, so the registered email is the proof the request is genuine.
@@ -471,8 +471,8 @@ Lets clients tell us they won't renew. Verified requests set TRACKER col F to `N
 ### 12 TestMode.gs — Safe testing on copies
 | Function | Description |
 |----------|-------------|
-| `sendMail_(options)` | Drop-in for `MailApp.sendEmail(options)` (all sends in 01/04/10/11 use it). If Config `TEST_EMAIL_OVERRIDE` is set, sends only to that address, drops CC/BCC, prefixes `[TEST]` and adds a banner listing the original recipients. Otherwise sends unchanged. |
-| `getTestEmailOverride_()` | Reads the Config key; also drives the `🧪 TEST MODE ON` / `⚠️ LIVE MODE` line in the [04] Sync preview. |
+| `sendMail_(options)` | Drop-in for `MailApp.sendEmail(options)` (all sends in 01/04/10/11 use it). If Config `TEST_EMAIL_OVERRIDE` is set, sends only to that address, drops CC/BCC, sets Reply-To to the override (so a tester's reply never reaches the client), prefixes `[TEST]` and adds a banner listing the original recipients. Otherwise sends unchanged. |
+| `getTestEmailOverride_()` | Reads the Config key; also drives the `🧪 TEST MODE ON` / `⚠️ LIVE MODE` line in the [04] Sync preview. **Fails closed:** if Config can't be read, the error propagates and nothing is sent (no silent fallback to live recipients). |
 
 ---
 
