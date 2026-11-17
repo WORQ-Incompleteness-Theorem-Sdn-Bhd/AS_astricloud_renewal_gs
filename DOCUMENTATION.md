@@ -195,7 +195,8 @@ Handles new customer intake and pilot number activation.
 
 | Function | Type | Description |
 |----------|------|-------------|
-| `copyNewEntriesToTracker()` | Scheduled / Manual | Copies new form responses to TRACKER. Deduplicates by company name against both TRACKER and ARCHIVED to prevent re-adding terminated companies. |
+| `copyNewEntriesToTracker()` | Manual ([01] menu) | Catch-up: copies any form responses not yet in TRACKER. New registrations are normally added automatically on submit. Deduplicates by company name (case and surrounding spaces ignored) against both TRACKER and ARCHIVED to prevent re-adding terminated companies. |
+| `addRegistrationToTracker_(companyName, location, email)` | Internal (via `onFormSubmit`) | Adds one new registration to TRACKER right after the AstriCloud signup email, using the same skip rule as [01]. |
 | `onPilotNumberEdit(e)` | Installable trigger | When a pilot number is entered in col E, validates for duplicates, then auto-sets contract dates and 12 months of "paid" |
 | `populate12MonthsPaid(sheet, rowNumber)` | Internal | Populates 12 monthly columns with "paid" + dropdown validation from the contract start date |
 | `backfillMissingPaidStatus()` | Manual | Scans all TRACKER rows with a contract start date but no monthly data, and backfills with "paid". Rows that already have monthly data are skipped. |
@@ -204,7 +205,7 @@ Handles new customer intake and pilot number activation.
 
 **Workflow:**
 1. Customer fills out Google Form
-2. `copyNewEntriesToTracker()` copies Company Name, Email, Location to TRACKER with empty pilot/contract fields
+2. On submit, the company (Company Name, Company Email, Location) is added to TRACKER automatically with empty pilot/contract fields (`[01] Copy New Entries` is only a manual catch-up)
    - Skips companies already present in TRACKER **or** ARCHIVED
 3. Admin manually enters a Pilot Number in column E
 4. `onPilotNumberEdit()` fires:
@@ -429,7 +430,7 @@ Handles new Google Form submissions automatically via an installable `onFormSubm
 | Function | Type | Description |
 |----------|------|-------------|
 | `onFormSubmit(e)` | Installable trigger | Thin wrapper — runs `handleFormSubmit_(e)` inside a try/catch that routes any error to `notifyError_()`, so a failed submission surfaces instead of failing silently. Re-throws so the error still appears in the execution log. |
-| `handleFormSubmit_(e)` | Internal | **Routes by response tab first:** submissions landing in `Termination Requests` go to `handleTerminationSubmit_(e)` (11 TerminationForm); any other tab except Form Responses 1 raises an error alert. Registration submissions then: clear old yellow highlight → highlight new row → check for duplicate company email → move duplicate to Archived Form Responses or send vendor notification |
+| `handleFormSubmit_(e)` | Internal | **Routes by response tab first:** submissions landing in `Termination Requests` go to `handleTerminationSubmit_(e)` (11 TerminationForm); any other tab except Form Responses 1 raises an error alert. Registration submissions then: clear old yellow highlight → highlight new row → check for duplicate company email → move duplicate to Archived Form Responses, or send vendor notification and add the company to TRACKER |
 | `clearFormHighlights(formSheet)` | Internal | Scans all data rows in Form Responses 1 and removes yellow (`#FFFF00`) backgrounds only, leaving other cell colours untouched |
 | `isEmailDuplicate(formSheet, email, currentRowNum, companyEmailCol)` | Internal | Returns `true` if the submitted company email (the "Company Email" column) already exists in any prior row of Form Responses 1 (case-insensitive). Skips the header row and the current new row. |
 | `moveToArchivedFormResponses(formSheet, rowNum, rowData)` | Internal | Appends the full row to the **Archived Form Responses** sheet (same column structure — direct copy), then deletes the row from Form Responses 1 to keep it clean. Creates the archive sheet automatically if it does not exist. |
@@ -496,7 +497,7 @@ Terminations always take effect at contract end.
 
 Both setup functions are **idempotent** — they remove any existing trigger with the same handler before creating a new one, so they can't double-fire. `setupAutoReminderTrigger()` also cleans up the legacy daily `checkAndSendReminders` trigger it replaced.
 
-> Everything else (`copyNewEntriesToTracker`, `syncRenewals`, `archiveTerminated`, …) is **manual by design**. Those mutate contracts or archive customers based on admin-entered decisions, so they keep a human gate.
+> Everything else (`syncRenewals`, `archiveTerminated`, …) is **manual by design**. Those mutate contracts or archive customers based on admin-entered decisions, so they keep a human gate.
 
 ### Failure alerting
 
@@ -541,9 +542,10 @@ Google Form
     |   |       YES → move row to [Archived Form Responses] (no vendor email)
     |   |       NO  → sendNewSignupVendorEmail() to AstriCloud
     |   |                 (CC: VENDOR_CC + outlet email)
+    |   |             → addRegistrationToTracker_() adds the company to TRACKER
     |
-    | copyNewEntriesToTracker()  (manual, [01] menu)
-    | (skips companies already in TRACKER or ARCHIVED)
+    | copyNewEntriesToTracker()  (manual catch-up, [01] menu)
+    | (both skip companies already in TRACKER or ARCHIVED)
     v
 [TRACKER]
     |--- onPilotNumberEdit()  ← pilot number entry triggers auto-population

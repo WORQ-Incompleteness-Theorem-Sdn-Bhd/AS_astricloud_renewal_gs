@@ -1,32 +1,23 @@
 /**
- * Copy new entries from Form Responses to TRACKER
- * Only copies rows that have a pilot number but aren't yet in TRACKER
+ * Copy new entries from Form Responses to TRACKER (menu [01]).
+ * New registrations are already added automatically on form submit
+ * (addRegistrationToTracker_), so this is a manual catch-up for anything missed.
+ * Skips companies already in TRACKER or ARCHIVED.
  */
 function copyNewEntriesToTracker() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const formSheet = ss.getSheetByName(CONFIG.FORM_RESPONSES_SHEET);
   const trackerSheet = ss.getSheetByName(CONFIG.TRACKER_SHEET);
-  
+
   if (!formSheet || !trackerSheet) {
     Logger.log('ERROR: Required sheets not found');
     return;
   }
-  
+
   const formData = formSheet.getDataRange().getValues();
-  const trackerData = trackerSheet.getDataRange().getValues();
   const cols = getFormCols_(formSheet);
+  const knownCompanies = getKnownCompanyNames_(ss, trackerSheet);
 
-  // Get existing company names in tracker (skip header)
-  const trackerCompanies = trackerData.slice(1).map(row => row[CONFIG.TRACKER_COLS.COMPANY_NAME - 1]);
-
-  // Also check ARCHIVED sheet so terminated companies are not re-added
-  const archivedSheet = ss.getSheetByName(CONFIG.ARCHIVED_SHEET);
-  const archivedCompanies = archivedSheet
-    ? archivedSheet.getDataRange().getValues().slice(1).map(row => row[CONFIG.TRACKER_COLS.COMPANY_NAME - 1])
-    : [];
-
-  const existingCompanies = [...trackerCompanies, ...archivedCompanies];
-  
   let copiedCount = 0;
   const copiedCompanies = [];
 
@@ -35,25 +26,11 @@ function copyNewEntriesToTracker() {
     const companyName = formData[i][cols.COMPANY_NAME - 1];
     const email = formData[i][cols.COMPANY_EMAIL - 1];
     const location = formData[i][cols.WORQ_LOCATION - 1];
+    const key = normCompanyName_(companyName);
 
-    // Check if company exists and is not already in tracker
-    if (companyName && companyName.toString().trim() !== '' && !existingCompanies.includes(companyName)) {
-
-      // Prepare row data (columns A through H)
-      // Column A (NO) is left empty — auto-populated by the SEQUENCE formula in A3
-      const newRow = [
-        '',                     // A - NO (handled by =SEQUENCE(COUNTA(B3:B)) formula)
-        companyName,            // B - Company Name
-        location,               // C - WORQ Location
-        email,                  // D - Company Email
-        '',                     // E - Pilot Number (empty - to be filled manually)
-        '',                     // F - Renewal Status
-        '',                     // G - Contract Start (auto-filled on pilot number entry)
-        ''                      // H - Contract End (auto-filled on pilot number entry)
-      ];
-
-      // Append to tracker
-      trackerSheet.appendRow(newRow);
+    if (key && !knownCompanies.has(key)) {
+      appendTrackerRow_(trackerSheet, companyName, location, email);
+      knownCompanies.add(key); // a company submitted twice is only copied once
 
       Logger.log(`Copied: ${companyName} - waiting for pilot number`);
       copiedCompanies.push(companyName);
@@ -71,6 +48,60 @@ function copyNewEntriesToTracker() {
     message = `ℹ️ No new entries to copy.\n\nAll form responses are already in TRACKER or ARCHIVED.`;
   }
   SpreadsheetApp.getUi().alert(message);
+}
+
+/**
+ * Add one new registration to TRACKER — called from onFormSubmit after the
+ * AstriCloud signup email, so nobody has to run menu [01]. Skips the company
+ * if it is already in TRACKER or ARCHIVED (same rule as [01]).
+ * @returns {boolean} true if a row was added
+ */
+function addRegistrationToTracker_(companyName, location, email) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const trackerSheet = ss.getSheetByName(CONFIG.TRACKER_SHEET);
+  if (!trackerSheet) throw new Error('TRACKER sheet not found');
+
+  if (getKnownCompanyNames_(ss, trackerSheet).has(normCompanyName_(companyName))) {
+    Logger.log(`addRegistrationToTracker_: "${companyName}" already in TRACKER or ARCHIVED — not added`);
+    return false;
+  }
+  appendTrackerRow_(trackerSheet, companyName, location, email);
+  Logger.log(`addRegistrationToTracker_: added "${companyName}" — waiting for pilot number`);
+  return true;
+}
+
+/**
+ * Normalised company names already in TRACKER or ARCHIVED, so a company is
+ * never added twice or re-added after termination. Case and surrounding
+ * spaces are ignored ("Acme Sdn Bhd " = "ACME SDN BHD").
+ * @returns {Set<string>}
+ */
+function getKnownCompanyNames_(ss, trackerSheet) {
+  const names = new Set();
+  const addFrom = sheet => sheet.getDataRange().getValues().slice(1).forEach(row => {
+    const key = normCompanyName_(row[CONFIG.TRACKER_COLS.COMPANY_NAME - 1]);
+    if (key) names.add(key);
+  });
+  addFrom(trackerSheet);
+  const archivedSheet = ss.getSheetByName(CONFIG.ARCHIVED_SHEET);
+  if (archivedSheet) addFrom(archivedSheet);
+  return names;
+}
+
+function normCompanyName_(v) { return (v || '').toString().trim().toLowerCase(); }
+
+/** Append a new company to TRACKER (columns A–H), pilot number left blank. */
+function appendTrackerRow_(trackerSheet, companyName, location, email) {
+  trackerSheet.appendRow([
+    '',            // A - NO (handled by =SEQUENCE(COUNTA(B3:B)) formula)
+    companyName,   // B - Company Name
+    location,      // C - WORQ Location
+    email,         // D - Company Email
+    '',            // E - Pilot Number (empty - to be filled manually)
+    '',            // F - Renewal Status
+    '',            // G - Contract Start (auto-filled on pilot number entry)
+    ''             // H - Contract End (auto-filled on pilot number entry)
+  ]);
 }
 
 /**

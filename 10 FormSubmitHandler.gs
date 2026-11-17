@@ -5,9 +5,10 @@
  * On each submission:
  *  1. Clears old yellow highlight from previous submission
  *  2. Highlights the new submission row in yellow
- *  3. Checks if the company email (col H) is a duplicate (already exists in a prior row)
+ *  3. Checks if the company email is a duplicate (already exists in a prior row)
  *     - Duplicate → move to Archived Form Responses, no vendor email
- *     - New       → send vendor notification to AstriCloud
+ *     - New       → send vendor notification to AstriCloud, then add the
+ *                   company to TRACKER (pilot number left blank)
  */
 function onFormSubmit(e) {
   // Thin wrapper: run the handler under error alerting so a failed submission
@@ -89,6 +90,10 @@ function handleFormSubmit_(e) {
 
   // 3. New submission — notify vendor
   sendNewSignupVendorEmail(companyName, companyEmail, worqLocation, timestamp);
+
+  // 4. Add the company to TRACKER now (same as menu [01]), ready for its pilot
+  // number. Uses the raw name, as [01] does, so TRACKER keeps the form's spelling.
+  addRegistrationToTracker_(rowData[cols.COMPANY_NAME - 1], worqLocation, companyEmail); // 02 FormToTracker
 }
 
 /**

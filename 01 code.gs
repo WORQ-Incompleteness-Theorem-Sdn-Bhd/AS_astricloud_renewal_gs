@@ -127,6 +127,10 @@ function onOpen() {
     .addItem('Highlight Renewal Urgency', 'highlightRenewalUrgency')
     .addItem('Clear Renewal Highlights', 'clearRenewalHighlights')
     .addItem('Find Lapsed Contracts', 'findLapsedContracts')
+    .addSeparator()
+    // One-time cleanup — in the menu because its preview popup can't open
+    // when run from the Apps Script editor.
+    .addItem('Fix TRACKER Emails from Form', 'fixTrackerEmailsFromForm')
     .addToUi();
 
   // ---------------------------------------------------------------------------
