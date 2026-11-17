@@ -91,7 +91,11 @@ var CONFIG = {
   ALERT_EMAIL: 'it@worq.space',
 
   // Failsafe recipient for the monthly reminder run summary (unattended runs)
-  REMINDER_SUMMARY_EMAIL: 'it@worq.space'
+  REMINDER_SUMMARY_EMAIL: 'it@worq.space',
+
+  // The live spreadsheet. A copy (testing) gets a different ID, and copies must
+  // set TEST_EMAIL_OVERRIDE in Config or sendMail_ blocks external email.
+  PRODUCTION_SPREADSHEET_ID: '1t_-C-TZjd7dN6uweYG3wdZkToVAG4pxfEKInIG-TolE'
 };
 
 /**
@@ -230,6 +234,12 @@ function runOncePerKey_(key, fn) {
   }
 }
 
+/** Escape text for safe insertion into an email's HTML body. */
+function escHtml_(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 /**
  * Email an error alert to CONFIG.ALERT_EMAIL. Called from the catch blocks of
  * unattended triggered functions so silent failures become visible.
@@ -245,7 +255,7 @@ function notifyError_(context, error) {
   Logger.log(`ERROR in ${context}: ${message}`);
 
   try {
-    MailApp.sendEmail({
+    sendMail_({
       to: CONFIG.ALERT_EMAIL,
       subject: `⚠️ AstriCloud Tracker error — ${context}`,
       htmlBody:
@@ -256,7 +266,7 @@ function notifyError_(context, error) {
         `<pre style="background:#f4f4f4;padding:10px;border:1px solid #ddd;white-space:pre-wrap;">${stack}</pre>` +
         `<p style="color:#888;font-size:12px;">Automated alert from the AstriCloud Tracker.</p>`,
       name: 'AstriCloud Tracker'
-    });
+    }, { internal: true }); // still sent if Config is unreadable (12 TestMode)
   } catch (mailErr) {
     // Last resort — if even the alert email fails, at least log it.
     Logger.log(`notifyError_ FAILED to send alert for ${context}: ${mailErr.message}`);

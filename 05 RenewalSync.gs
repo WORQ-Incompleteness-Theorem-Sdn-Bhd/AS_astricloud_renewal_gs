@@ -19,7 +19,8 @@ function syncRenewals() {
 
   // ── Pass 1: scan rows, build preview lists ─────────────────────────────────
   const toRenew     = []; // { rowIdx, companyName, companyEmail, pilotNumber, currentEndDate, newStartDate, newEndDate }
-  const toTerminate = []; // { rowIdx, companyName, companyEmail, pilotNumber, currentEndDate }
+  const toTerminate = []; // { rowIdx, companyName, companyEmail, pilotNumber, currentEndDate, reason }
+  const terminationReasons = getTerminationReasons_(); // from the client Termination Request form (11 TerminationForm)
 
   for (let i = 2; i < trackerData.length; i++) {
     const companyName   = trackerData[i][CONFIG.TRACKER_COLS.COMPANY_NAME   - 1];
@@ -34,7 +35,8 @@ function syncRenewals() {
     const currentEndDate = new Date(contractEnd);
 
     if (renewalStatus === 'Not Renewing') {
-      toTerminate.push({ rowIdx: i, companyName, companyEmail, pilotNumber, currentEndDate, worqLocation });
+      const reason = terminationReasonFor_(terminationReasons, pilotNumber, currentEndDate);
+      toTerminate.push({ rowIdx: i, companyName, companyEmail, pilotNumber, currentEndDate, worqLocation, reason });
     } else if (renewalStatus === 'Renew') {
       const newStartDate = new Date(currentEndDate.getFullYear(), currentEndDate.getMonth() + 1, 1);
       const newEndDate   = new Date(currentEndDate);
@@ -72,6 +74,11 @@ function syncRenewals() {
     previewMsg += `\n\n📧 ${emailCount} confirmation email(s) will be sent to customers.`;
   }
   previewMsg += `\n📨 1 vendor notification will be sent to ${getVendorEmail()}.`;
+
+  const testOverride = getTestEmailOverride_(); // 12 TestMode
+  previewMsg += testOverride
+    ? `\n\n🧪 TEST MODE ON — all emails will go ONLY to ${testOverride}.`
+    : `\n\n⚠️ LIVE MODE — emails go to real customers and AstriCloud.`;
 
   previewMsg += '\n\nProceed?';
 

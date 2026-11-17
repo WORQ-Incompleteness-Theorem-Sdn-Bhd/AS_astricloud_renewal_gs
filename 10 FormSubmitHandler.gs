@@ -39,6 +39,22 @@ function formSubmissionKey_(e) {
 }
 
 function handleFormSubmit_(e) {
+  // This trigger fires for EVERY form linked to the spreadsheet. Route each
+  // submission by the tab it landed in so other forms never touch Form Responses 1.
+  const submittedSheet = e.range.getSheet().getName();
+  if (submittedSheet === TERMINATION.SHEET) {
+    handleTerminationSubmit_(e); // 11 TerminationForm
+    return;
+  }
+  if (submittedSheet !== CONFIG.FORM_RESPONSES_SHEET) {
+    // Throw so onFormSubmit emails an alert — e.g. if the termination form's
+    // tab never got renamed, client requests would otherwise vanish silently.
+    throw new Error(
+      `Form submission landed in tab "${submittedSheet}" (row ${e.range.getRow()}), which no handler processes. ` +
+      `If this is the termination form, rename the tab to "${TERMINATION.SHEET}" and re-check that row by hand.`
+    );
+  }
+
   const ss        = SpreadsheetApp.getActiveSpreadsheet();
   const formSheet = ss.getSheetByName(CONFIG.FORM_RESPONSES_SHEET);
   if (!formSheet) {
@@ -193,7 +209,7 @@ function sendNewSignupVendorEmail(companyName, email, worqLocation, timestamp) {
 
   // No try/catch: a failure propagates to onFormSubmit(), which emails an
   // alert via notifyError_() — otherwise a missed signup would go unnoticed.
-  MailApp.sendEmail({
+  sendMail_({
     to:       getVendorEmail(),
     cc:       cc,
     subject:  subject,
