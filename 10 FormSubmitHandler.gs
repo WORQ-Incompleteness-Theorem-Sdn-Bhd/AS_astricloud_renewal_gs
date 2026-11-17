@@ -65,11 +65,13 @@ function handleFormSubmit_(e) {
   const rowNum  = e.range.getRow();
   const rowData = formSheet.getRange(rowNum, 1, 1, formSheet.getLastColumn()).getValues()[0];
 
-  const timestamp    = rowData[CONFIG.FORM_COLS.TIMESTAMP    - 1];
-  const email        = (rowData[CONFIG.FORM_COLS.EMAIL        - 1] || '').toString().trim();
-  const companyName  = (rowData[CONFIG.FORM_COLS.COMPANY_NAME - 1] || '').toString().trim();
-  const worqLocation = (rowData[CONFIG.FORM_COLS.WORQ_LOCATION - 1] || '').toString().trim();
-  const companyEmail = (rowData[CONFIG.FORM_COLS.COMPANY_EMAIL - 1] || '').toString().trim();
+  const cols = getFormCols_(formSheet);
+
+  const timestamp    = rowData[cols.TIMESTAMP    - 1];
+  const email        = (rowData[cols.EMAIL        - 1] || '').toString().trim();
+  const companyName  = (rowData[cols.COMPANY_NAME - 1] || '').toString().trim();
+  const worqLocation = (rowData[cols.WORQ_LOCATION - 1] || '').toString().trim();
+  const companyEmail = (rowData[cols.COMPANY_EMAIL - 1] || '').toString().trim();
 
   // 1. Clear old yellow highlight, then highlight new row
   clearFormHighlights(formSheet);
@@ -77,9 +79,9 @@ function handleFormSubmit_(e) {
 
   Logger.log(`onFormSubmit: row ${rowNum} | ${companyName} | ${email} | ${companyEmail} | ${worqLocation}`);
 
-  // 2. Duplicate check — keyed on company email (col H), not submitter email,
+  // 2. Duplicate check — keyed on Company Email, not submitter email,
   // since one submitter may register several companies.
-  if (isEmailDuplicate(formSheet, companyEmail, rowNum)) {
+  if (isEmailDuplicate(formSheet, companyEmail, rowNum, cols.COMPANY_EMAIL)) {
     Logger.log(`onFormSubmit: DUPLICATE company email "${companyEmail}" — moving to Archived Form Responses`);
     moveToArchivedFormResponses(formSheet, rowNum, rowData);
     return;
@@ -111,10 +113,11 @@ function clearFormHighlights(formSheet) {
 }
 
 /**
- * Returns true if `email` already exists in the Company Email column (H) of a
- * prior row of Form Responses 1 (any row except header row 1 and the current row).
+ * Returns true if `email` already exists in the Company Email column
+ * (`companyEmailCol`, 1-based) of a prior row of Form Responses 1 (any row
+ * except header row 1 and the current row).
  */
-function isEmailDuplicate(formSheet, email, currentRowNum) {
+function isEmailDuplicate(formSheet, email, currentRowNum, companyEmailCol) {
   if (!email) return false;
 
   const emailNorm = email.toLowerCase();
@@ -124,7 +127,7 @@ function isEmailDuplicate(formSheet, email, currentRowNum) {
     const rowNum = i + 1; // 1-based row number
     if (rowNum === currentRowNum) continue;
 
-    const existingEmail = (data[i][CONFIG.FORM_COLS.COMPANY_EMAIL - 1] || '').toString().trim().toLowerCase();
+    const existingEmail = (data[i][companyEmailCol - 1] || '').toString().trim().toLowerCase();
     if (existingEmail === emailNorm) return true;
   }
 

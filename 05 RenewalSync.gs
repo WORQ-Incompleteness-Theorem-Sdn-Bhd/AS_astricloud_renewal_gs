@@ -96,17 +96,10 @@ function syncRenewals() {
   const emailsFailed = [];
 
   for (const r of toTerminate) {
-    markMonthCell(trackerSheet, r.rowIdx + 1, r.currentEndDate, 'terminate');
-    trackerSheet.getRange(r.rowIdx + 1, CONFIG.TRACKER_COLS.RENEWAL_STATUS).setValue('Terminated');
-    if (r.companyEmail) {
-      if (sendTerminationEmail(r.companyName, r.companyEmail, r.pilotNumber, r.currentEndDate, r.worqLocation)) {
-        emailsSent++;
-      } else {
-        emailsFailed.push(`${r.companyName} (${r.companyEmail}) — termination`);
-      }
-    }
+    const clientSent = terminateRow_(trackerSheet, r.rowIdx + 1, r);
+    if (clientSent === true) emailsSent++;
+    if (clientSent === false) emailsFailed.push(`${r.companyName} (${r.companyEmail}) — termination`);
     terminatedCompanies.push(r.companyName);
-    Logger.log(`Marked ${r.companyName} as Terminated. Run [05] Archive Terminated Customers when ready.`);
   }
 
   for (const r of toRenew) {
@@ -153,6 +146,24 @@ function syncRenewals() {
     ? `\nVendor notification sent to ${getVendorEmail()}`
     : `\n\n❌ Vendor notification to ${getVendorEmail()} FAILED — please notify AstriCloud manually.`;
   ui.alert(`${emailsFailed.length > 0 || !vendorSent ? '⚠️' : '✅'} Sync complete\n\n${parts.join('\n\n')}${emailLine}${failedLine}${vendorLine}`);
+}
+
+/**
+ * Terminate one TRACKER row: mark the contract-end month 'terminate', set
+ * Renewal Status to 'Terminated' (so Sync and the reminders skip it from now
+ * on) and send the client's termination confirmation. The AstriCloud email is
+ * sent by the caller, since Sync batches several terminations into one email.
+ * Shared by [04] Sync Renewals and verified termination form requests.
+ * @param {{companyName, companyEmail, pilotNumber, currentEndDate:Date, worqLocation}} r
+ * @returns {boolean|null} client email: true sent, false failed, null no email on file
+ */
+function terminateRow_(sheet, rowNum, r) {
+  markMonthCell(sheet, rowNum, r.currentEndDate, 'terminate');
+  sheet.getRange(rowNum, CONFIG.TRACKER_COLS.RENEWAL_STATUS).setValue('Terminated');
+  Logger.log(`Marked ${r.companyName} as Terminated. Run [05] Archive Terminated Customers when ready.`);
+
+  if (!r.companyEmail) return null;
+  return sendTerminationEmail(r.companyName, r.companyEmail, r.pilotNumber, r.currentEndDate, r.worqLocation);
 }
 
 /**

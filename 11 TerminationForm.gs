@@ -12,17 +12,19 @@
  *  1. Find the TRACKER row by pilot number, then check the submitted email
  *     matches that row's Company Email (col D). Pilot numbers are public phone
  *     numbers, so the email is what proves the request is genuine.
- *  2. Both match one row → set Renewal Status (col F) to "Not Renewing" and add
- *     a note on the cell. Anything else → change nothing, flag NEEDS REVIEW.
+ *  2. Both match one row → terminate immediately, exactly as [04] Sync does:
+ *     Renewal Status (col F) → "Terminated", contract-end month → 'terminate',
+ *     client termination confirmation + AstriCloud email sent now, note added
+ *     on the cell. Reminders stop and a later Sync won't email anyone again.
+ *     Anything else → change nothing, send nothing external, flag NEEDS REVIEW
+ *     (IT confirms, sets "Not Renewing", then [04] Sync sends both emails).
  *  3. Write the outcome next to the response in "Termination Requests".
  *  4. Email Ops (Config: TERMINATION_NOTIFY_EMAIL, default it@worq.space), CC the
- *     company's outlet email from the Addresses sheet, so they can review.
+ *     company's outlet email from the Addresses sheet.
  *
- * Nothing is sent to AstriCloud or the client here. Ops still runs
- * [04] Sync Renewals as usual, which sends the client termination
- * confirmation and the vendor email. Terminations always take effect at the
- * end of the current contract (clients pay the full term up front), so
- * early-termination requests are handled the same way.
+ * Terminations always take effect at the end of the current contract (clients
+ * pay the full term up front), so early-termination requests are handled the
+ * same way.
  *
  * One-time setup: run createTerminationForm() from the Apps Script editor.
  */
@@ -81,24 +83,44 @@ function handleTerminationSubmit_(e) {
   if (match.ok) {
     const statusCell = trackerSheet.getRange(match.rowNum, CONFIG.TRACKER_COLS.RENEWAL_STATUS);
     previousStatus = (statusCell.getValue() || '').toString().trim();
+    const contractEnd = match.row[CONFIG.TRACKER_COLS.CONTRACT_END - 1];
 
-    if (previousStatus === 'Terminated' || previousStatus === 'Not Renewing') {
-      status = `Already "${previousStatus}" — no change`;
+    if (previousStatus === 'Terminated') {
+      status = 'Already "Terminated" — no change';
     } else if (previousStatus === 'Renew' || previousStatus === 'Renewed') {
       // The client already chose (or paid for) a renewal — never undo that
       // automatically; a person must confirm which decision stands.
       status = `NEEDS REVIEW — contract is already "${previousStatus}", nothing changed`;
+    } else if (!contractEnd) {
+      status = 'NEEDS REVIEW — no Contract End Date in TRACKER, nothing changed';
     } else {
-      statusCell.setValue('Not Renewing');
+      // Verified: terminate now, exactly as [04] Sync would — client
+      // confirmation + AstriCloud email immediately, status 'Terminated' so a
+      // later Sync run doesn't email anyone a second time.
       const stamp = Utilities.formatDate(req.submittedAt, tz, 'dd MMM yyyy HH:mm');
       const oldNote = statusCell.getNote();
       statusCell.setNote(
         (oldNote ? oldNote + '\n\n' : '') +
-        `Termination form submitted ${stamp} by "${req.companyName}" (${req.companyEmail}).` +
+        `Termination form submitted ${stamp} by "${req.companyName}" (${req.companyEmail}) — verified, terminated automatically.` +
         (previousStatus ? ` Previous status: ${previousStatus}.` : '') +
         (req.reason ? `\nReason: ${req.reason}` : '')
       );
-      status = 'Set to "Not Renewing"';
+
+      const C = CONFIG.TRACKER_COLS;
+      const r = {
+        companyName:    match.row[C.COMPANY_NAME  - 1],
+        companyEmail:   match.row[C.COMPANY_EMAIL - 1],
+        pilotNumber:    match.row[C.PILOT_NUMBER  - 1],
+        worqLocation:   match.row[C.WORQ_LOCATION - 1],
+        currentEndDate: new Date(contractEnd),
+        reason:         req.reason
+      };
+      const clientSent = terminateRow_(trackerSheet, match.rowNum, r);   // 05 RenewalSync
+      const vendorSent = sendVendorNotificationEmail([], [r]);          // 04 RenewalReminders
+
+      status = 'Terminated — ' +
+        (clientSent ? 'client confirmation sent' : 'client confirmation FAILED, send manually') + ', ' +
+        (vendorSent ? 'AstriCloud notified' : 'AstriCloud notice FAILED, notify manually');
     }
   } else if (!match.row && isInArchived_(ss, req)) {
     status = 'NEEDS REVIEW — pilot number is already in ARCHIVED, nothing changed';
@@ -258,7 +280,8 @@ function writeTerminationStatus_(sheet, rowNum, values) {
   });
 
   // Highlight rows that need a person to look at them
-  if (String(values[0]).indexOf('NEEDS REVIEW') === 0) {
+  const s = String(values[0]);
+  if (s.indexOf('NEEDS REVIEW') === 0 || s.indexOf('FAILED') !== -1) {
     sheet.getRange(rowNum, 1, 1, sheet.getLastColumn()).setBackground('#FCE8E6');
   }
 }
@@ -268,6 +291,8 @@ function sendTerminationRequestOpsEmail_(req, status, company, previousStatus) {
   const tz = Session.getScriptTimeZone();
   const to = getConfigValue(TERMINATION.NOTIFY_CONFIG_KEY) || CONFIG.ALERT_EMAIL;
   const needsReview = status.indexOf('NEEDS REVIEW') === 0;
+  const sendFailed  = status.indexOf('FAILED') !== -1;
+  const attention   = needsReview || sendFailed;
   const esc = escHtml_;
   const endStr = company && company.contractEnd
     ? Utilities.formatDate(new Date(company.contractEnd), tz, 'dd MMM yyyy') : '—';
@@ -295,10 +320,22 @@ function sendTerminationRequestOpsEmail_(req, status, company, previousStatus) {
   }
   if (previousStatus) rows += row('Previous Renewal Status', esc(previousStatus));
   if (req.reason)     rows += row('Reason', esc(req.reason));
-  rows += row('Result', `<strong style="color:${needsReview ? '#cc0000' : '#007700'};">${esc(status)}</strong>`);
+  rows += row('Result', `<strong style="color:${attention ? '#cc0000' : '#007700'};">${esc(status)}</strong>`);
 
   const title = toProperCase(company ? company.name : req.companyName) || `Pilot ${req.pilotNumber || 'unknown'}`;
-  const subject = `${needsReview ? '⚠️ [Needs review] ' : ''}Virtual Landline Termination Request - ${title}`;
+  const tag = needsReview ? '⚠️ [Needs review] ' : sendFailed ? '⚠️ [Email failed] ' : '';
+  const subject = `${tag}Virtual Landline Termination Request - ${title}`;
+
+  let actionText;
+  if (needsReview) {
+    actionText = `<p><strong>Action needed:</strong> check the request with the client <strong>using the registered Company Email in TRACKER</strong> — not the email typed on the form, which is unverified. If it is genuine, set Renewal Status (col F) to "Not Renewing" in TRACKER, then run <em>🤖 AstriCloud Automation → [04] Sync Renewals</em> to send the client's confirmation and notify AstriCloud.</p>`;
+  } else if (status.indexOf('Terminated —') === 0) {
+    actionText = `<p><strong>Done automatically</strong> (pilot number and registered email matched): Renewal Status is now "Terminated", the client's termination confirmation was sent and AstriCloud was notified. No need to run [04] Sync for this client.` +
+      (sendFailed ? ` <strong style="color:#cc0000;">One or more emails FAILED — see Result above and send them manually.</strong>` : '') +
+      ` Run [05] Archive Terminated Customers when ready.</p>`;
+  } else {
+    actionText = `<p>No action needed.</p>`;
+  }
 
   const htmlBody = `
 <p>Hi Team,</p>
@@ -307,9 +344,7 @@ function sendTerminationRequestOpsEmail_(req, status, company, previousStatus) {
   ${rows}
 </table>
 <br>
-${needsReview
-  ? `<p><strong>Action needed:</strong> check the request with the client <strong>using the registered Company Email in TRACKER</strong> — not the email typed on the form, which is unverified. If it is genuine, set Renewal Status (col F) to "Not Renewing" in TRACKER manually.</p>`
-  : `<p><strong>Next step:</strong> run <em>🤖 AstriCloud Automation → [04] Sync Renewals</em>. That sends the client's termination confirmation and the AstriCloud notification. If the request is not genuine, change Renewal Status (col F) back before syncing.</p>`}
+${actionText}
 <p>Note: service continues until the contract end date even if the client asked for early termination (contract is paid in full upfront).</p>
 <p><a href="${SpreadsheetApp.getActiveSpreadsheet().getUrl()}">Open the AstriCloud Tracker</a></p>
 <p style="color:#888;font-size:12px;">Automated message from the AstriCloud Tracker.</p>`;

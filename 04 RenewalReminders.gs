@@ -456,20 +456,21 @@ function sendRenewalReminderEmail(companyName, email, pilotNumber, expiryDate, m
 }
 
 /**
- * Send one customer-facing email, CC'ing the outlet (Addresses sheet) if found.
+ * Send one customer-facing email, CC'ing it@worq.space (so IT has a copy of
+ * everything sent to clients) and the outlet (Addresses sheet) if found.
  * Never throws — returns true on success, false on failure, so callers can
  * avoid recording an email as sent when it wasn't.
  * @returns {boolean}
  */
 function sendCustomerEmail_(email, subject, htmlBody, worqLocation, label) {
   const locationEmail = getLocationEmail(worqLocation);
+  const cc = ['it@worq.space', locationEmail].filter(Boolean).join(',');
 
   try {
-    const options = { to: email, subject: subject, htmlBody: htmlBody, name: 'WORQ Operations Team', replyTo: 'it@worq.space' };
-    if (locationEmail) options.cc = locationEmail;
+    const options = { to: email, cc: cc, subject: subject, htmlBody: htmlBody, name: 'WORQ Operations Team', replyTo: 'it@worq.space' };
     sendMail_(options);
 
-    Logger.log(`${label} sent (${email})${locationEmail ? ` | CC: ${locationEmail}` : ''}`);
+    Logger.log(`${label} sent (${email}) | CC: ${cc}`);
     return true;
   } catch (e) {
     Logger.log(`ERROR — ${label} FAILED (${email}): ${e.message}`);

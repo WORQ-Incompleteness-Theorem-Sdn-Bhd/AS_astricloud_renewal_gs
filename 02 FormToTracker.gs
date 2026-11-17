@@ -14,6 +14,7 @@ function copyNewEntriesToTracker() {
   
   const formData = formSheet.getDataRange().getValues();
   const trackerData = trackerSheet.getDataRange().getValues();
+  const cols = getFormCols_(formSheet);
 
   // Get existing company names in tracker (skip header)
   const trackerCompanies = trackerData.slice(1).map(row => row[CONFIG.TRACKER_COLS.COMPANY_NAME - 1]);
@@ -31,9 +32,9 @@ function copyNewEntriesToTracker() {
 
   // Start from row 2 (skip header)
   for (let i = 1; i < formData.length; i++) {
-    const companyName = formData[i][CONFIG.FORM_COLS.COMPANY_NAME - 1];
-    const email = formData[i][CONFIG.FORM_COLS.COMPANY_EMAIL - 1];
-    const location = formData[i][CONFIG.FORM_COLS.WORQ_LOCATION - 1];
+    const companyName = formData[i][cols.COMPANY_NAME - 1];
+    const email = formData[i][cols.COMPANY_EMAIL - 1];
+    const location = formData[i][cols.WORQ_LOCATION - 1];
 
     // Check if company exists and is not already in tracker
     if (companyName && companyName.toString().trim() !== '' && !existingCompanies.includes(companyName)) {
@@ -92,10 +93,11 @@ function fixTrackerEmailsFromForm() {
   const norm = v => (v || '').toString().trim().toLowerCase();
 
   // Company name → company email; later rows overwrite earlier ones (latest wins)
+  const cols = getFormCols_(formSheet);
   const companyEmailByName = {};
   formSheet.getDataRange().getValues().slice(1).forEach(row => {
-    const name  = norm(row[CONFIG.FORM_COLS.COMPANY_NAME - 1]);
-    const email = (row[CONFIG.FORM_COLS.COMPANY_EMAIL - 1] || '').toString().trim();
+    const name  = norm(row[cols.COMPANY_NAME - 1]);
+    const email = (row[cols.COMPANY_EMAIL - 1] || '').toString().trim();
     if (name && email) companyEmailByName[name] = email;
   });
 

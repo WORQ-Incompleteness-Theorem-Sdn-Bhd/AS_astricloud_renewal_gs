@@ -24,15 +24,16 @@ var CONFIG = {
     FIRST_MONTH: 9      // I (Feb-2024)
   },
 
-  // Column positions in FORM RESPONSES 1
-  FORM_COLS: {
-    TIMESTAMP: 1,       // A
-    EMAIL: 2,           // B
-    COMPANY_NAME: 3,    // C
-    REG_NUMBER: 4,      // D (ignore)
-    WORQ_LOCATION: 5,   // E
-    COMPANY_EMAIL: 8    // H (dedupe key — one submitter may register many companies)
-    // F, G, I-X: ignore
+  // Registration form questions the script reads from FORM RESPONSES 1, found by
+  // column header (trimmed, case-insensitive) — so questions can be added or
+  // reordered in the form freely. Renaming one of THESE questions renames its
+  // header: update the title here too. Resolved by getFormCols_().
+  FORM_HEADERS: {
+    TIMESTAMP:     'Timestamp',
+    EMAIL:         'Email Address',   // submitter (Google account) email
+    COMPANY_NAME:  'Company Name',
+    WORQ_LOCATION: 'WORQ Location',
+    COMPANY_EMAIL: 'Company Email'    // dedupe key — one submitter may register many companies
   },
 
   // Renewal Status columns
@@ -232,6 +233,35 @@ function runOncePerKey_(key, fn) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * 1-based column numbers of the CONFIG.FORM_HEADERS questions in the
+ * registration response sheet, looked up from its header row. Throws (→ error
+ * alert from triggers) if a header is missing, e.g. a question was renamed.
+ * @returns {{TIMESTAMP:number, EMAIL:number, COMPANY_NAME:number,
+ *            WORQ_LOCATION:number, COMPANY_EMAIL:number}}
+ */
+function getFormCols_(formSheet) {
+  const norm = h => (h || '').toString().trim().toLowerCase();
+  const headers = formSheet.getRange(1, 1, 1, formSheet.getLastColumn()).getValues()[0].map(norm);
+
+  const cols = {};
+  const missing = [];
+  Object.keys(CONFIG.FORM_HEADERS).forEach(key => {
+    const title = CONFIG.FORM_HEADERS[key];
+    const idx = headers.indexOf(norm(title));
+    if (idx === -1) missing.push(`"${title}"`);
+    cols[key] = idx + 1;
+  });
+
+  if (missing.length) {
+    throw new Error(
+      `"${formSheet.getName()}" has no column header ${missing.join(', ')}. ` +
+      `A registration form question was probably renamed — update CONFIG.FORM_HEADERS in 01 code.gs to match.`
+    );
+  }
+  return cols;
 }
 
 /** Escape text for safe insertion into an email's HTML body. */
