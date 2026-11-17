@@ -84,6 +84,10 @@ function handleTerminationSubmit_(e) {
 
     if (previousStatus === 'Terminated' || previousStatus === 'Not Renewing') {
       status = `Already "${previousStatus}" — no change`;
+    } else if (previousStatus === 'Renew' || previousStatus === 'Renewed') {
+      // The client already chose (or paid for) a renewal — never undo that
+      // automatically; a person must confirm which decision stands.
+      status = `NEEDS REVIEW — contract is already "${previousStatus}", nothing changed`;
     } else {
       statusCell.setValue('Not Renewing');
       const stamp = Utilities.formatDate(req.submittedAt, tz, 'dd MMM yyyy HH:mm');
@@ -114,7 +118,15 @@ function handleTerminationSubmit_(e) {
     req.submittedAt
   ]);
 
-  sendTerminationRequestOpsEmail_(req, status, company, previousStatus);
+  // TRACKER and the status columns are already written, so don't let an email
+  // failure throw: that would leave the submission un-marked in
+  // runOncePerKey_ and a retry would overwrite the status with
+  // 'Already "Not Renewing"', hiding who made the change. Alert instead.
+  try {
+    sendTerminationRequestOpsEmail_(req, status, company, previousStatus);
+  } catch (err) {
+    notifyError_(`Termination request Ops email (row ${rowNum}, pilot ${req.pilotNumber}) — result was: ${status}`, err);
+  }
 }
 
 /**
@@ -164,8 +176,12 @@ function isInArchived_(ss, req) {
  * Reasons from verified termination requests, keyed by normalised pilot number
  * (latest submission wins — by Timestamp, not row order, so sorting the tab
  * can't change the result). Used by [04] Sync Renewals via
- * terminationReasonFor_(). Rows flagged NEEDS REVIEW are skipped — they were
- * never verified.
+ * terminationReasonFor_(). NEEDS REVIEW rows are kept only when the pilot
+ * number matched a TRACKER company — Ops approves those by setting
+ * "Not Renewing" by hand, and the reason should still reach AstriCloud. Rows
+ * with no matched company (unknown/archived pilot number) are skipped.
+ * terminationReasonFor_ is only used for rows Sync is terminating, so an
+ * unapproved request's reason is never shown.
  * @returns {Object<string,{reason:string, at:Date|null}>}
  */
 function getTerminationReasons_() {
@@ -177,15 +193,18 @@ function getTerminationReasons_() {
   const pilotCol  = headers.indexOf(TERMINATION.Q.PILOT_NUMBER);
   const reasonCol = headers.indexOf(TERMINATION.Q.REASON);
   const statusCol = headers.indexOf(TERMINATION.STATUS_HEADERS[0]);
+  const matchCol  = headers.indexOf(TERMINATION.STATUS_HEADERS[1]);
   const timeCol   = headers.indexOf('Timestamp');
   if (pilotCol < 0 || reasonCol < 0 || statusCol < 0) return {};
 
   const reasons = {};
   for (let i = 1; i < data.length; i++) {
-    const status = (data[i][statusCol] || '').toString();
-    const pilot  = normPilot_(data[i][pilotCol]);
-    const reason = (data[i][reasonCol] || '').toString().trim();
-    if (!pilot || !reason || !status || status.indexOf('NEEDS REVIEW') === 0) continue;
+    const status  = (data[i][statusCol] || '').toString();
+    const matched = matchCol >= 0 && (data[i][matchCol] || '').toString().trim() !== '';
+    const pilot   = normPilot_(data[i][pilotCol]);
+    const reason  = (data[i][reasonCol] || '').toString().trim();
+    if (!pilot || !reason || !status) continue;
+    if (status.indexOf('NEEDS REVIEW') === 0 && !matched) continue;
     const at = timeCol >= 0 && data[i][timeCol] ? new Date(data[i][timeCol]) : null;
     const prev = reasons[pilot];
     const t = at && !isNaN(at.getTime()) ? at.getTime() : -Infinity;
@@ -249,7 +268,7 @@ function sendTerminationRequestOpsEmail_(req, status, company, previousStatus) {
   const tz = Session.getScriptTimeZone();
   const to = getConfigValue(TERMINATION.NOTIFY_CONFIG_KEY) || CONFIG.ALERT_EMAIL;
   const needsReview = status.indexOf('NEEDS REVIEW') === 0;
-  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const esc = escHtml_;
   const endStr = company && company.contractEnd
     ? Utilities.formatDate(new Date(company.contractEnd), tz, 'dd MMM yyyy') : '—';
 
@@ -289,7 +308,7 @@ function sendTerminationRequestOpsEmail_(req, status, company, previousStatus) {
 </table>
 <br>
 ${needsReview
-  ? `<p><strong>Action needed:</strong> check the request with the client. If it is genuine, set Renewal Status (col F) to "Not Renewing" in TRACKER manually.</p>`
+  ? `<p><strong>Action needed:</strong> check the request with the client <strong>using the registered Company Email in TRACKER</strong> — not the email typed on the form, which is unverified. If it is genuine, set Renewal Status (col F) to "Not Renewing" in TRACKER manually.</p>`
   : `<p><strong>Next step:</strong> run <em>🤖 AstriCloud Automation → [04] Sync Renewals</em>. That sends the client's termination confirmation and the AstriCloud notification. If the request is not genuine, change Renewal Status (col F) back before syncing.</p>`}
 <p>Note: service continues until the contract end date even if the client asked for early termination (contract is paid in full upfront).</p>
 <p><a href="${SpreadsheetApp.getActiveSpreadsheet().getUrl()}">Open the AstriCloud Tracker</a></p>
@@ -303,7 +322,9 @@ ${needsReview
     subject: subject,
     htmlBody: htmlBody,
     name: 'AstriCloud Tracker', // internal email — same sender name as the boss's alerts/summary
-    replyTo: req.companyEmail || 'it@worq.space'
+    // Never the form's email: it is unverified, so on a NEEDS REVIEW request
+    // "Reply" could reach an impostor. Use the registered TRACKER email.
+    replyTo: (company && company.email) ? String(company.email).trim() : 'it@worq.space'
   };
   if (outletEmail) mail.cc = outletEmail;
   sendMail_(mail);
@@ -338,8 +359,10 @@ function createTerminationForm() {
   if (existingId) {
     const linked = ss.getSheets().find(s => (s.getFormUrl() || '').indexOf(existingId) !== -1);
     if (linked) {
+      const oldName = linked.getName();
       linked.setName(TERMINATION.SHEET);
-      ui.alert(`✅ Existing Termination Request form found — renamed its tab "${linked.getName()}". No new form created.`);
+      seedTerminationNotifyConfig_(ss);
+      ui.alert(`✅ Existing Termination Request form found — renamed its tab "${oldName}" to "${TERMINATION.SHEET}". No new form created.`);
     } else {
       ui.alert(
         `⚠️ A Termination Request form was already created (ID ${existingId}) but no tab in this sheet is linked to it.\n\n` +
@@ -387,11 +410,7 @@ function createTerminationForm() {
   }
   if (respSheet) respSheet.setName(TERMINATION.SHEET);
 
-  // Seed Config with who gets the Ops notification (never overwrites)
-  if (!getConfigValue(TERMINATION.NOTIFY_CONFIG_KEY)) {
-    const cfg = ss.getSheetByName(CONFIG.CONFIG_SHEET);
-    if (cfg) cfg.appendRow([TERMINATION.NOTIFY_CONFIG_KEY, CONFIG.ALERT_EMAIL]); // it@worq.space
-  }
+  seedTerminationNotifyConfig_(ss);
 
   ui.alert(
     '✅ Termination Request form created\n\n' +
@@ -404,4 +423,11 @@ function createTerminationForm() {
     `Ops notifications go to the ${TERMINATION.NOTIFY_CONFIG_KEY} value in the Config tab.\n\n` +
     'The form was created in your My Drive — move it next to this spreadsheet if you like.'
   );
+}
+
+/** Add TERMINATION_NOTIFY_EMAIL (it@worq.space) to Config if missing — never overwrites. */
+function seedTerminationNotifyConfig_(ss) {
+  if (getConfigValue(TERMINATION.NOTIFY_CONFIG_KEY)) return;
+  const cfg = ss.getSheetByName(CONFIG.CONFIG_SHEET);
+  if (cfg) cfg.appendRow([TERMINATION.NOTIFY_CONFIG_KEY, CONFIG.ALERT_EMAIL]);
 }

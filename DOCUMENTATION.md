@@ -450,7 +450,7 @@ Handles new Google Form submissions automatically via an installable `onFormSubm
 - Base: `CONFIG.VENDOR_CC` (full AstriCloud + WORQ recipient list)
 - The outlet email from the Addresses sheet is appended if the submitted WORQ Location matches a row in col A
 
-> **Trigger setup**: Run `setupFormSubmitTrigger()` once from the Apps Script editor (or uncomment its menu item) to install the trigger. Verify in Apps Script > Triggers that an `onFormSubmit` trigger pointing to `onFormSubmit` is present. The same trigger serves both the Registration Form and the Termination Request Form.
+> **Trigger setup**: Run `setupFormSubmitTrigger()` once from the Apps Script editor (or uncomment its menu item) to install the trigger. Verify in Apps Script > Triggers that an `onFormSubmit` trigger pointing to `onFormSubmit` is present. The same trigger serves both the Registration Form and the Termination Request Form. A submission landing in any other tab (e.g. an un-renamed "Form Responses 2") raises an error alert to it@worq.space rather than being ignored.
 
 ---
 
@@ -460,11 +460,11 @@ Lets clients tell us they won't renew. Verified requests set TRACKER col F to `N
 | Function | Type | Description |
 |----------|------|-------------|
 | `createTerminationForm()` | Manual (editor), once per sheet | Creates the form (Company Name, Pilot Number, Registered Company Email, Reason, Acknowledgement), links it, renames its tab to `Termination Requests`, seeds `TERMINATION_NOTIFY_EMAIL`. No-op if the tab exists. If a form was already created (script property `TERMINATION_FORM_ID`) but its tab wasn't renamed, re-running renames that tab instead of creating a second form. Done on production 14 Nov 2026 (form owned by the department account). |
-| `handleTerminationSubmit_(e)` | Internal (via `onFormSubmit`) | Matches the request, updates col F + adds a cell note when verified, writes status columns G–J, emails Ops. |
+| `handleTerminationSubmit_(e)` | Internal (via `onFormSubmit`) | Matches the request, updates col F + adds a cell note when verified, writes status columns G–J, emails Ops. If col F is already `Renew` / `Renewed` it changes nothing and flags `NEEDS REVIEW` (a renewal is never undone automatically). If the Ops email fails, it sends an error alert instead of throwing, so a retry can't overwrite the recorded result. |
 | `matchTerminationRequest_(data, req)` | Internal, pure | Auto-approves only when the pilot number matches **exactly one** TRACKER row **and** the email equals that row's col D. Otherwise returns a `NEEDS REVIEW …` status and changes nothing. |
-| `getTerminationReasons_()` | Internal | `{normalisedPilot: {reason, at}}` from verified rows (skips `NEEDS REVIEW`). When a pilot number has several verified requests, the one with the newest **Timestamp** wins — not the last row — so sorting the tab can't change the result. |
+| `getTerminationReasons_()` | Internal | `{normalisedPilot: {reason, at}}` from verified rows, plus `NEEDS REVIEW` rows whose pilot number matched a TRACKER company (Ops approves those by setting `Not Renewing` by hand). Rows with no matched company are skipped. When a pilot number has several requests, the one with the newest **Timestamp** wins — not the last row — so sorting the tab can't change the result. |
 | `terminationReasonFor_(reasons, pilot, contractEnd)` | Internal | Used by `syncRenewals()` for the AstriCloud email's Reason column. Returns the reason only if it was submitted within the current contract cycle (the 12 months ending on `contractEnd`), so a reason from an earlier cycle is never reused. |
-| `sendTerminationRequestOpsEmail_()` | Internal | To `TERMINATION_NOTIFY_EMAIL`, CC outlet (`getLocationEmail()`), sender name **AstriCloud Tracker**. Always shows the **submitted** pilot number and email; company, location and contract end come from the matched TRACKER row. When the submitted company name or email differs from TRACKER, the TRACKER value is shown next to it in red (`form says:` / `registered:`). |
+| `sendTerminationRequestOpsEmail_()` | Internal | To `TERMINATION_NOTIFY_EMAIL`, CC outlet (`getLocationEmail()`), sender name **AstriCloud Tracker**. Always shows the **submitted** pilot number and email; company, location and contract end come from the matched TRACKER row. When the submitted company name or email differs from TRACKER, the TRACKER value is shown next to it in red (`form says:` / `registered:`). **Reply-To is the registered TRACKER email** (or it@worq.space if none matched), never the email typed on the form, which is unverified. |
 | `normPilot_(v)` / `normEmail_(v)` | Internal | Digits only, leading 0s and `60` country code stripped / trimmed lowercase. |
 
 **Why pilot + email:** pilot numbers are public phone numbers, so the registered email is the proof the request is genuine.
@@ -472,8 +472,8 @@ Lets clients tell us they won't renew. Verified requests set TRACKER col F to `N
 ### 12 TestMode.gs — Safe testing on copies
 | Function | Description |
 |----------|-------------|
-| `sendMail_(options)` | Drop-in for `MailApp.sendEmail(options)` (all sends in 01/04/10/11 use it). If Config `TEST_EMAIL_OVERRIDE` is set, sends only to that address, drops CC/BCC, sets Reply-To to the override (so a tester's reply never reaches the client), prefixes `[TEST]` and adds a banner listing the original recipients. Otherwise sends unchanged. |
-| `getTestEmailOverride_()` | Reads the Config key; also drives the `🧪 TEST MODE ON` / `⚠️ LIVE MODE` line in the [04] Sync preview. **Fails closed:** if Config can't be read, the error propagates and client/AstriCloud mail is not sent (no silent fallback to live recipients). |
+| `sendMail_(options)` | Drop-in for `MailApp.sendEmail(options)` (all sends in 01/04/10/11 use it). If Config `TEST_EMAIL_OVERRIDE` is set, sends only to that address, drops CC/BCC, sets Reply-To to the override (so a tester's reply never reaches the client), prefixes `[TEST]` and adds a banner listing the original recipients. Otherwise sends unchanged — **but only on the production spreadsheet** (`CONFIG.PRODUCTION_SPREADSHEET_ID`). On any copy without `TEST_EMAIL_OVERRIDE` (Config tab missing/renamed, key misspelled or blank), client/AstriCloud email is blocked with an error. |
+| `getTestEmailOverride_()` | Reads the Config key once per execution (cached); also drives the `🧪 TEST MODE ON` / `⚠️ LIVE MODE` line in the [04] Sync preview. **Fails closed:** if Config can't be read, the error propagates and client/AstriCloud mail is not sent (no silent fallback to live recipients). |
 | `sendMail_(options, { internal: true })` | Used by `notifyError_()` and the monthly reminder summary (IT-only, to it@worq.space, no CC). If Config can't be read, these are still sent as-is with a `[CONFIG UNREADABLE]` subject prefix, so the failure is never silent. |
 
 ---

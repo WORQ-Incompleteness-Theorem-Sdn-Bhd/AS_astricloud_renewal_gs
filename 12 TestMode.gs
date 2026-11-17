@@ -8,9 +8,17 @@
  *
  * Leave TEST_EMAIL_OVERRIDE out of Config (or blank) on the live sheet —
  * then emails are sent exactly as before.
+ *
+ * Any copy of the spreadsheet (ID ≠ CONFIG.PRODUCTION_SPREADSHEET_ID) with no
+ * override is blocked from sending client/vendor email, so a copy with a
+ * missing/renamed Config tab or a misspelled key can never email real people.
  */
 
 var TEST_MODE_CONFIG_KEY = 'TEST_EMAIL_OVERRIDE';
+
+// Per-execution cache (Apps Script globals reset on every run), so a loop of
+// N emails reads the Config sheet once, not N times.
+var testEmailOverrideCache_;
 
 /**
  * @returns {string|null} override address when test mode is on.
@@ -20,7 +28,14 @@ var TEST_MODE_CONFIG_KEY = 'TEST_EMAIL_OVERRIDE';
  * send failures (alert email / "please send manually" in the summary).
  */
 function getTestEmailOverride_() {
-  return getConfigValue(TEST_MODE_CONFIG_KEY);
+  if (testEmailOverrideCache_ === undefined) {
+    testEmailOverrideCache_ = getConfigValue(TEST_MODE_CONFIG_KEY);
+  }
+  return testEmailOverrideCache_;
+}
+
+function isProductionSpreadsheet_() {
+  return SpreadsheetApp.getActiveSpreadsheet().getId() === CONFIG.PRODUCTION_SPREADSHEET_ID;
 }
 
 /**
@@ -41,18 +56,24 @@ function sendMail_(options, opts) {
       Logger.log(`sendMail_: Config unreadable (${err.message}) — sending internal mail as-is`);
       MailApp.sendEmail(Object.assign({}, options, {
         subject: '[CONFIG UNREADABLE] ' + (options.subject || ''),
-        htmlBody: `<p style="color:#cc0000;"><strong>Note:</strong> the Config sheet could not be read (${String(err.message).replace(/</g, '&lt;')}). Client and AstriCloud emails are blocked until this is fixed.</p>` + (options.htmlBody || '')
+        htmlBody: `<p style="color:#cc0000;"><strong>Note:</strong> the Config sheet could not be read (${escHtml_(err.message)}). Client and AstriCloud emails are blocked until this is fixed.</p>` + (options.htmlBody || '')
       }));
       return;
     }
     throw err;
   }
   if (!override) {
+    if (!isProductionSpreadsheet_() && !(opts && opts.internal)) {
+      throw new Error(
+        `Email blocked: this is a copy of the tracker (not production) and Config has no ${TEST_MODE_CONFIG_KEY}. ` +
+        `Add ${TEST_MODE_CONFIG_KEY} to the Config tab to test. Blocked: "${options.subject}" to ${options.to}`
+      );
+    }
     MailApp.sendEmail(options);
     return;
   }
 
-  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const esc = escHtml_;
   const test = Object.assign({}, options);
   delete test.cc;
   delete test.bcc;

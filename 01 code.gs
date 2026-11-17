@@ -91,7 +91,11 @@ var CONFIG = {
   ALERT_EMAIL: 'it@worq.space',
 
   // Failsafe recipient for the monthly reminder run summary (unattended runs)
-  REMINDER_SUMMARY_EMAIL: 'it@worq.space'
+  REMINDER_SUMMARY_EMAIL: 'it@worq.space',
+
+  // The live spreadsheet. A copy (testing) gets a different ID, and copies must
+  // set TEST_EMAIL_OVERRIDE in Config or sendMail_ blocks external email.
+  PRODUCTION_SPREADSHEET_ID: '1t_-C-TZjd7dN6uweYG3wdZkToVAG4pxfEKInIG-TolE'
 };
 
 /**
@@ -228,6 +232,12 @@ function runOncePerKey_(key, fn) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/** Escape text for safe insertion into an email's HTML body. */
+function escHtml_(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /**

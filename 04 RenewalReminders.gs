@@ -569,24 +569,23 @@ function sendVendorNotificationEmail(renewals, terminations) {
 
   // Build table rows — terminations first, then renewals (matches screenshot order)
   let tableRows = '';
-  const escHtml = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   for (const r of terminations) {
     const endStr = Utilities.formatDate(r.currentEndDate, tz, 'dd-MMM-yyyy');
-    const name   = toProperCase(r.companyName);
+    const name   = escHtml_(toProperCase(r.companyName));
     tableRows += `
       <tr>
         <td style="border:1px solid #000;padding:6px 12px;">${name}</td>
         <td style="border:1px solid #000;padding:6px 12px;text-align:center;">${endStr}</td>
         <td style="border:1px solid #000;padding:6px 12px;text-align:center;color:#cc0000;font-weight:bold;">Terminate</td>
         <td style="border:1px solid #000;padding:6px 12px;">Remove from WORQ Billing</td>
-        <td style="border:1px solid #000;padding:6px 12px;">${escHtml(r.reason) || '—'}</td>
+        <td style="border:1px solid #000;padding:6px 12px;">${escHtml_(r.reason) || '—'}</td>
       </tr>`;
   }
 
   for (const r of renewals) {
     const endStr = Utilities.formatDate(r.newEndDate, tz, 'dd-MMM-yyyy');
-    const name   = toProperCase(r.companyName);
+    const name   = escHtml_(toProperCase(r.companyName));
     tableRows += `
       <tr>
         <td style="border:1px solid #000;padding:6px 12px;">${name}</td>

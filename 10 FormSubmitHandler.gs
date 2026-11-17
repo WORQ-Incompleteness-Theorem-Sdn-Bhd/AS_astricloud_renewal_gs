@@ -47,8 +47,12 @@ function handleFormSubmit_(e) {
     return;
   }
   if (submittedSheet !== CONFIG.FORM_RESPONSES_SHEET) {
-    Logger.log(`onFormSubmit: submission in "${submittedSheet}" is not handled — ignored`);
-    return;
+    // Throw so onFormSubmit emails an alert — e.g. if the termination form's
+    // tab never got renamed, client requests would otherwise vanish silently.
+    throw new Error(
+      `Form submission landed in tab "${submittedSheet}" (row ${e.range.getRow()}), which no handler processes. ` +
+      `If this is the termination form, rename the tab to "${TERMINATION.SHEET}" and re-check that row by hand.`
+    );
   }
 
   const ss        = SpreadsheetApp.getActiveSpreadsheet();
